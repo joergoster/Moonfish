@@ -326,15 +326,18 @@ void Thread::search() {
   Stack stack[MAX_PLY+10], *ss = stack+7;
   Value bestValue, alpha, beta, delta;
   Move  lastBestMove = MOVE_NONE;
-  Depth lastBestMoveDepth = 0;
+  Depth adjustedDepth, lastBestMoveDepth = 0;
   MainThread* mainThread = (this == Threads.main() ? Threads.main() : nullptr);
   double timeReduction = 1, totBestMoveChanges = 0;
   Color us = rootPos.side_to_move();
+  int failedHighCnt;
+  bool reducedDepthSearch;
 
   for (int i = 7; i > 0; i--)
       (ss-i)->continuationHistory = &this->continuationHistory[0][NO_PIECE][0]; // Use as a sentinel
 
-  bestValue = delta = alpha = -VALUE_INFINITE;
+  bestValue = alpha = -VALUE_INFINITE;
+  delta = VALUE_ZERO;
   beta = VALUE_INFINITE;
 
   size_t multiPV = Options["MultiPV"];
@@ -419,13 +422,25 @@ void Thread::search() {
                                       : -make_score(dct, dct / 2));
           }
 
+          // Reset counters/flags to control a reduced fail-high search
+          failedHighCnt = 0;
+          adjustedDepth = rootDepth;
+          reducedDepthSearch = false;
+
           // Start with a small aspiration window and, in the case of a fail
           // high/low, re-search with a bigger window until we don't fail
           // high/low anymore.
-          int failedHighCnt = 0;
           while (true)
           {
-              Depth adjustedDepth = std::max(1, rootDepth - failedHighCnt);
+              // Set reduced search depth after the second fail-high
+              if (   failedHighCnt == 2
+                  && rootDepth > 6)
+              {
+                  failedHighCnt = 0;
+                  adjustedDepth = rootDepth - 2;
+                  reducedDepthSearch = true;
+              }
+
               bestValue = ::search<PV>(rootPos, ss, alpha, beta, adjustedDepth, false);
 
               // Bring the best move to the front. It is critical that sorting
@@ -464,7 +479,9 @@ void Thread::search() {
               else if (bestValue >= beta)
               {
                   beta = std::min(bestValue + delta, VALUE_INFINITE);
-                  ++failedHighCnt;
+
+                  if (!reducedDepthSearch)
+                      ++failedHighCnt;
               }
               else
               {
@@ -474,6 +491,7 @@ void Thread::search() {
 
               delta += delta / 4 + 5;
 
+              assert(delta >= VALUE_ZERO);
               assert(alpha >= -VALUE_INFINITE && beta <= VALUE_INFINITE);
           }
 
@@ -934,7 +952,7 @@ moves_loop: // When in check, search starts from here
       ss->moveCount = ++moveCount;
 
       if (rootNode && thisThread == Threads.main() && Time.elapsed() > 3000)
-          sync_cout << "info depth " << depth
+          sync_cout << "info depth " << thisThread->rootDepth
                     << " currmove " << UCI::move(move, pos.is_chess960())
                     << " currmovenumber " << moveCount + thisThread->pvIdx << sync_endl;
 

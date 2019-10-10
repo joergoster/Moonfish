@@ -42,7 +42,6 @@ constexpr int CounterMovePruneThreshold = 0;
 struct Stack {
 
   Stack() {
-    pv = nullptr;
     continuationHistory = nullptr;
     currentMove = excludedMove = MOVE_NONE;
     killers[0] = killers[1] = MOVE_NONE;
@@ -50,7 +49,7 @@ struct Stack {
     ply = statScore = moveCount = 0;
   }
 
-  Move* pv;
+  std::vector<Move> pv;
   PieceToHistory* continuationHistory;
   int ply;
   Move currentMove;

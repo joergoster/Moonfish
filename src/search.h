@@ -40,6 +40,16 @@ constexpr int CounterMovePruneThreshold = 0;
 /// its own array of Stack objects, indexed by the current ply.
 
 struct Stack {
+
+  Stack() {
+    pv = nullptr;
+    continuationHistory = nullptr;
+    currentMove = excludedMove = MOVE_NONE;
+    killers[0] = killers[1] = MOVE_NONE;
+    staticEval = VALUE_ZERO;
+    ply = statScore = moveCount = 0;
+  }
+
   Move* pv;
   PieceToHistory* continuationHistory;
   int ply;

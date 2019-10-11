@@ -611,7 +611,7 @@ namespace {
     Key posKey;
     Move ttMove, move, excludedMove, bestMove;
     Depth extension, newDepth;
-    Value bestValue, value, ttValue, eval, maxValue;
+    Value bestValue, value, ttValue, eval, maxValue, oldAlpha;
     bool ttHit, ttPv, inCheck, givesCheck, improving, doLMR, priorCapture;
     bool captureOrPromotion, doFullDepthSearch, moveCountPruning, ttCapture;
     Piece movedPiece;
@@ -625,6 +625,7 @@ namespace {
     moveCount = captureCount = quietCount = singularLMR = ss->moveCount = 0;
     bestValue = -VALUE_INFINITE;
     maxValue = VALUE_INFINITE;
+    oldAlpha = alpha;
 
     // Check for the available remaining time
     if (thisThread == Threads.main())
@@ -1308,8 +1309,8 @@ moves_loop: // When in check, search starts from here
 
     if (!excludedMove)
         tte->save(posKey, value_to_tt(bestValue, ss->ply), ttPv,
-                  bestValue >= beta ? BOUND_LOWER :
-                  PvNode && bestMove ? BOUND_EXACT : BOUND_UPPER,
+                  bestValue >= beta     ? BOUND_LOWER :
+                  bestValue <= oldAlpha ? BOUND_UPPER : BOUND_EXACT,
                   depth, bestMove, ss->staticEval);
 
     assert(bestValue > -VALUE_INFINITE && bestValue < VALUE_INFINITE);
@@ -1339,10 +1340,7 @@ moves_loop: // When in check, search starts from here
     int moveCount;
 
     if (PvNode)
-    {
-        oldAlpha = alpha; // To flag BOUND_EXACT when eval above alpha and no available moves
         (ss-1)->pv.clear();
-    }
 
     Thread* thisThread = pos.this_thread();
     (ss+1)->ply = ss->ply + 1;
@@ -1350,6 +1348,7 @@ moves_loop: // When in check, search starts from here
     inCheck = pos.checkers();
     priorCapture = pos.captured_piece();
     moveCount = 0;
+    oldAlpha = alpha; // To flag BOUND_EXACT when eval above alpha
 
     // Check for an immediate draw or maximum ply reached
     if (   pos.is_draw(ss->ply)
@@ -1521,8 +1520,8 @@ moves_loop: // When in check, search starts from here
         return mated_in(ss->ply); // Plies to mate from the root
 
     tte->save(posKey, value_to_tt(bestValue, ss->ply), pvHit,
-              bestValue >= beta ? BOUND_LOWER :
-              PvNode && bestValue > oldAlpha  ? BOUND_EXACT : BOUND_UPPER,
+              bestValue >= beta     ? BOUND_LOWER :
+              bestValue <= oldAlpha ? BOUND_UPPER : BOUND_EXACT,
               ttDepth, bestMove, ss->staticEval);
 
     assert(bestValue > -VALUE_INFINITE && bestValue < VALUE_INFINITE);

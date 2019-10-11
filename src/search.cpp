@@ -143,6 +143,9 @@ namespace {
     bool otherThread, owning;
   };
 
+  // Global switch to turn on/off null move pruning
+  bool doNull;
+
   template <NodeType NT>
   Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, bool cutNode);
 
@@ -340,6 +343,7 @@ void Thread::search() {
   delta = VALUE_ZERO;
   beta = VALUE_INFINITE;
 
+  doNull = Options["NullMove"];
   size_t multiPV = Options["MultiPV"];
 
   // Pick integer skill levels, but non-deterministically round up or down
@@ -814,7 +818,8 @@ namespace {
         return eval;
 
     // Step 9. Null move search with verification search (~40 Elo)
-    if (   !PvNode
+    if (    doNull
+        && !PvNode
         && (ss-1)->currentMove != MOVE_NULL
         && (ss-1)->statScore < 22661
         &&  eval >= beta

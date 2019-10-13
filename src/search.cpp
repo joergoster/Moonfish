@@ -235,6 +235,9 @@ void MainThread::search() {
   }
   else
   {
+      // Only the main thread needs to set this
+      doNull = Options["NullMove"];
+
       for (Thread* th : Threads)
       {
           th->bestMoveChanges = 0;
@@ -343,7 +346,6 @@ void Thread::search() {
   delta = VALUE_ZERO;
   beta = VALUE_INFINITE;
 
-  doNull = Options["NullMove"];
   size_t multiPV = Options["MultiPV"];
 
   // Pick integer skill levels, but non-deterministically round up or down

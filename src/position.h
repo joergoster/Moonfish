@@ -83,11 +83,9 @@ public:
   const std::string fen() const;
 
   // Position representation
-  Bitboard pieces() const;
-  Bitboard pieces(PieceType pt) const;
+  Bitboard pieces(PieceType pt = ALL_PIECES) const;
   Bitboard pieces(PieceType pt1, PieceType pt2) const;
-  Bitboard pieces(Color c) const;
-  Bitboard pieces(Color c, PieceType pt) const;
+  Bitboard pieces(Color c, PieceType pt = ALL_PIECES) const;
   Bitboard pieces(Color c, PieceType pt1, PieceType pt2) const;
   Piece piece_on(Square s) const;
   Square ep_square() const;
@@ -159,8 +157,7 @@ public:
   bool has_repeated() const;
   int rule50_count() const;
   Score psq_score() const;
-  Value non_pawn_material(Color c) const;
-  Value non_pawn_material() const;
+  Value non_pawn_material(Color c = COLOR_NB) const;
 
   // Position consistency check, for debugging
   bool pos_is_ok() const;
@@ -219,10 +216,6 @@ inline Piece Position::moved_piece(Move m) const {
   return board[from_sq(m)];
 }
 
-inline Bitboard Position::pieces() const {
-  return byTypeBB[ALL_PIECES];
-}
-
 inline Bitboard Position::pieces(PieceType pt) const {
   return byTypeBB[pt];
 }
@@ -231,12 +224,9 @@ inline Bitboard Position::pieces(PieceType pt1, PieceType pt2) const {
   return byTypeBB[pt1] | byTypeBB[pt2];
 }
 
-inline Bitboard Position::pieces(Color c) const {
-  return byColorBB[c];
-}
-
 inline Bitboard Position::pieces(Color c, PieceType pt) const {
-  return byColorBB[c] & byTypeBB[pt];
+  return pt == ALL_PIECES ? byColorBB[c]
+                          : byColorBB[c] & byTypeBB[pt];
 }
 
 inline Bitboard Position::pieces(Color c, PieceType pt1, PieceType pt2) const {
@@ -331,7 +321,7 @@ inline bool Position::advanced_pawn_push(Move m) const {
 }
 
 inline int Position::pawns_on_same_color_squares(Color c, Square s) const {
-  return popcount(pieces(c, PAWN) & ((DarkSquares & s) ? DarkSquares : ~DarkSquares));
+  return popcount(pieces(c, PAWN) & ((DarkSquares & s) ? DarkSquares : LightSquares));
 }
 
 inline Key Position::key() const {
@@ -351,11 +341,8 @@ inline Score Position::psq_score() const {
 }
 
 inline Value Position::non_pawn_material(Color c) const {
-  return st->nonPawnMaterial[c];
-}
-
-inline Value Position::non_pawn_material() const {
-  return st->nonPawnMaterial[WHITE] + st->nonPawnMaterial[BLACK];
+  return c < COLOR_NB ? st->nonPawnMaterial[c]
+                      : st->nonPawnMaterial[WHITE] + st->nonPawnMaterial[BLACK];
 }
 
 inline int Position::game_ply() const {

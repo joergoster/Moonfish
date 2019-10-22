@@ -233,7 +233,13 @@ void UCI::loop(int argc, char* argv[]) {
       else if (token == "flip")  pos.flip();
       else if (token == "bench") bench(pos, is, states);
       else if (token == "d")     sync_cout << pos << sync_endl;
-      else if (token == "eval")  sync_cout << Eval::trace(pos) << sync_endl;
+      else if (token == "eval")
+      {
+          if (bool(pos.checkers()))
+              sync_cout << "Not when in check!" << sync_endl;
+          else
+              sync_cout << Eval::trace(pos) << sync_endl;
+      }
       else
           sync_cout << "Unknown command: " << cmd << sync_endl;
 

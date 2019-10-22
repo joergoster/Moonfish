@@ -102,12 +102,16 @@ std::ostream& operator<<(std::ostream& os, const Position& pos) {
       os << " |\n +---+---+---+---+---+---+---+---+\n";
   }
 
-  os << "\nFen: " << pos.fen() << "\nKey: " << std::hex << std::uppercase
-     << std::setfill('0') << std::setw(16) << pos.key()
+  os << "\nFen: " << pos.fen()
+     << "\nPositionKey: " << std::hex << std::uppercase << std::setfill('0') << std::setw(16) << pos.key()
+     << "\nMaterialKey: " << pos.material_key()
+     << "\nPawnKey:     " << pos.pawn_key()
      << std::setfill(' ') << std::dec << "\nCheckers: ";
 
   for (Bitboard b = pos.checkers(); b; )
       os << UCI::square(pop_lsb(&b)) << " ";
+
+  os << "\nLegal moves: " << MoveList<LEGAL>(pos).size();
 
   if (    int(Tablebases::MaxCardinality) >= popcount(pos.pieces())
       && !pos.can_castle(ANY_CASTLING))
@@ -115,9 +119,11 @@ std::ostream& operator<<(std::ostream& os, const Position& pos) {
       StateInfo st;
       Position p;
       p.set(pos.fen(), pos.is_chess960(), &st, pos.this_thread());
+
       Tablebases::ProbeState s1, s2;
       Tablebases::WDLScore wdl = Tablebases::probe_wdl(p, &s1);
       int dtz = Tablebases::probe_dtz(p, &s2);
+
       os << "\nTablebases WDL: " << std::setw(4) << wdl << " (" << s1 << ")"
          << "\nTablebases DTZ: " << std::setw(4) << dtz << " (" << s2 << ")";
   }

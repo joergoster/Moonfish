@@ -90,8 +90,7 @@ public:
   Piece piece_on(Square s) const;
   Square ep_square() const;
   bool empty(Square s) const;
-  template<PieceType Pt> int count(Color c) const;
-  template<PieceType Pt> int count() const;
+  template<PieceType Pt> int count(Color c = COLOR_NB) const;
   template<PieceType Pt> const Square* squares(Color c) const;
   template<PieceType Pt> Square square(Color c) const;
   bool is_on_semiopen_file(Color c, Square s) const;
@@ -235,11 +234,8 @@ inline Bitboard Position::pieces(Color c, PieceType pt1, PieceType pt2) const {
 }
 
 template<PieceType Pt> inline int Position::count(Color c) const {
-  return pieceCount[make_piece(c, Pt)];
-}
-
-template<PieceType Pt> inline int Position::count() const {
-  return pieceCount[make_piece(WHITE, Pt)] + pieceCount[make_piece(BLACK, Pt)];
+  return c < COLOR_NB ? pieceCount[make_piece(c, Pt)]
+                      : pieceCount[make_piece(WHITE, Pt)] + pieceCount[make_piece(BLACK, Pt)];
 }
 
 template<PieceType Pt> inline const Square* Position::squares(Color c) const {
@@ -355,7 +351,8 @@ inline int Position::rule50_count() const {
 }
 
 inline bool Position::bishop_pair(Color c) const {
-  return   byColorBB[c] & byTypeBB[BISHOP] & LightSquares
+  return   pieceCount[make_piece(c, BISHOP)] > 1
+        && byColorBB[c] & byTypeBB[BISHOP] & LightSquares
         && byColorBB[c] & byTypeBB[BISHOP] & DarkSquares;
 }
 

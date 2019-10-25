@@ -784,41 +784,60 @@ namespace {
     // imbalance. Score is computed internally from the white point of view.
     Score score = pos.psq_score() + me->imbalance() + pos.this_thread()->contempt;
 
-    // Probe the pawn hash table
+    // Probe the pawn hash table and add the pawn eval
     pe = Pawns::probe(pos);
     score += pe->pawn_score(WHITE) - pe->pawn_score(BLACK);
 
-    // Early exit if score is high
+    // Early exit if score is high (Lazy Eval)
     Value v = (mg_value(score) + eg_value(score)) / 2;
+
     if (abs(v) > LazyThreshold + pos.non_pawn_material() / 64)
+    {
+        // In case of tracing add all available individual evaluation terms
+        if (T)
+        {
+            Trace::add(MATERIAL, pos.psq_score());
+            Trace::add(IMBALANCE, me->imbalance());
+            Trace::add(PAWN, pe->pawn_score(WHITE), pe->pawn_score(BLACK));
+            Trace::add(TOTAL, score);
+        }
+
        return pos.side_to_move() == WHITE ? v : -v;
+    }
 
-    // Main evaluation begins here
-
+    // Main evaluation begins here.
+    // Initialize some tables/bitboards for both sides.
     initialize<WHITE>();
     initialize<BLACK>();
 
     // Pieces should be evaluated first (populate attack tables)
-    score +=  pieces<WHITE, KNIGHT>() - pieces<BLACK, KNIGHT>()
-            + pieces<WHITE, BISHOP>() - pieces<BLACK, BISHOP>()
-            + pieces<WHITE, ROOK  >() - pieces<BLACK, ROOK  >()
-            + pieces<WHITE, QUEEN >() - pieces<BLACK, QUEEN >();
+    score += pieces<WHITE, KNIGHT>() - pieces<BLACK, KNIGHT>();
+    score += pieces<WHITE, BISHOP>() - pieces<BLACK, BISHOP>();
+    score += pieces<WHITE, ROOK  >() - pieces<BLACK, ROOK  >();
+    score += pieces<WHITE, QUEEN >() - pieces<BLACK, QUEEN >();
 
+    // Mobility scores are ready now
     score += mobility[WHITE] - mobility[BLACK];
 
-    score +=  king<   WHITE>() - king<   BLACK>()
-            + threats<WHITE>() - threats<BLACK>()
-            + passed< WHITE>() - passed< BLACK>()
-            + space<  WHITE>() - space<  BLACK>();
-
+    // Now do the remaining eval stuff
+    score += king<WHITE>() - king<BLACK>();
+    score += threats<WHITE>() - threats<BLACK>();
+    score += passed<WHITE>() - passed<BLACK>();
+    score += space<WHITE>() - space<BLACK>();
     score += initiative(score);
 
-    // Interpolate between a middlegame and a (scaled by 'sf') endgame score
-    ScaleFactor sf = scale_factor(eg_value(score));
-    v =  mg_value(score) * int(me->game_phase())
-       + eg_value(score) * int(PHASE_MIDGAME - me->game_phase()) * sf / SCALE_FACTOR_NORMAL;
+    // Finally, interpolate between a middlegame and a (scaled by 'sf')
+    // endgame score if necessary.
+    v = mg_value(score);
 
-    v /= PHASE_MIDGAME;
+    if (me->game_phase() < PHASE_MIDGAME)
+    {
+        ScaleFactor sf = scale_factor(eg_value(score));
+
+        v =  v * int(me->game_phase())
+           + eg_value(score) * int(PHASE_MIDGAME - me->game_phase()) * sf / SCALE_FACTOR_NORMAL;
+        v /= PHASE_MIDGAME;
+    }
 
     // In case of tracing add all remaining individual evaluation terms
     if (T)

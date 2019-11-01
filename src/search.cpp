@@ -690,7 +690,6 @@ namespace {
     if (  !PvNode
         && ttHit
         && tte->depth() >= depth
-        && pos.rule50_count() < 80
         && ttValue != VALUE_NONE // Possible in case of TT access race
         && (ttValue >= beta ? (tte->bound() & BOUND_LOWER)
                             : (tte->bound() & BOUND_UPPER)))
@@ -1314,7 +1313,8 @@ moves_loop: // When in check, search starts from here
         tte->save(posKey, value_to_tt(bestValue, ss->ply), ttPv,
                   bestValue >= beta     ? BOUND_LOWER :
                   bestValue <= oldAlpha ? BOUND_UPPER : BOUND_EXACT,
-                  depth, bestMove, ss->staticEval);
+                  pos.rule50_count() > 90 ? std::min(depth + 6, MAX_PLY - 1) : depth,
+                  bestMove, ss->staticEval);
 
     assert(bestValue > -VALUE_INFINITE && bestValue < VALUE_INFINITE);
 

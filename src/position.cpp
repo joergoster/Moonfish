@@ -318,7 +318,7 @@ Position& Position::set(const string& fenStr, bool isChess960, StateInfo* si, Th
 
   // Convert from fullmove starting from 1 to gamePly starting from 0,
   // handle also common incorrect FEN with fullmove = 0.
-  gamePly = std::max(2 * (gamePly - 1), 0) + (sideToMove == BLACK);
+  gamePly = std::max(2 * (std::max(gamePly, st->rule50 / 2 + 1) - 1), 0) + (sideToMove == BLACK);
 
   chess960 = isChess960;
   thisThread = th;

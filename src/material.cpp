@@ -147,6 +147,24 @@ Entry* probe(const Position& pos) {
           return e;
       }
 
+  // No need to compute imbalance when material is even
+  if (npm_w != npm_b || pos.count<PAWN>(WHITE) != pos.count<PAWN>(BLACK)
+                     || pos.bishop_pair(WHITE) != pos.bishop_pair(BLACK))
+  {
+      // Now evaluate the material imbalance to ensure our main evaluation function
+      // uses consistent data in any case. We use PIECE_TYPE_NONE as a place holder
+      // for the bishop pair, which allows us to be more flexible in defining
+      // bishop pair bonuses.
+      const int pieceCount[COLOR_NB][PIECE_TYPE_NB] = {
+      { pos.bishop_pair(WHITE)  , pos.count<PAWN>(WHITE), pos.count<KNIGHT>(WHITE),
+        pos.count<BISHOP>(WHITE), pos.count<ROOK>(WHITE), pos.count<QUEEN >(WHITE) },
+      { pos.bishop_pair(BLACK)  , pos.count<PAWN>(BLACK), pos.count<KNIGHT>(BLACK),
+        pos.count<BISHOP>(BLACK), pos.count<ROOK>(BLACK), pos.count<QUEEN >(BLACK) } };
+
+      e->value[WHITE] = int16_t(imbalance<WHITE>(pieceCount) / 16);
+      e->value[BLACK] = int16_t(imbalance<BLACK>(pieceCount) / 16);
+  }
+
   // OK, we didn't find any special evaluation function for the current material
   // configuration. Is there a suitable specialized scaling function?
   const auto* sf = Endgames::probe<ScaleFactor>(key);
@@ -202,18 +220,6 @@ Entry* probe(const Position& pos) {
   if (!pos.count<PAWN>(BLACK) && npm_b - npm_w <= BishopValueMg)
       e->factor[BLACK] = uint8_t(npm_b <  RookValueMg   ? SCALE_FACTOR_DRAW :
                                  npm_w <= BishopValueMg ? 4 : 14);
-
-  // Evaluate the material imbalance. We use PIECE_TYPE_NONE as a place holder
-  // for the bishop pair "extended piece", which allows us to be more flexible
-  // in defining bishop pair bonuses.
-  const int pieceCount[COLOR_NB][PIECE_TYPE_NB] = {
-  { pos.count<BISHOP>(WHITE) > 1, pos.count<PAWN>(WHITE), pos.count<KNIGHT>(WHITE),
-    pos.count<BISHOP>(WHITE)    , pos.count<ROOK>(WHITE), pos.count<QUEEN >(WHITE) },
-  { pos.count<BISHOP>(BLACK) > 1, pos.count<PAWN>(BLACK), pos.count<KNIGHT>(BLACK),
-    pos.count<BISHOP>(BLACK)    , pos.count<ROOK>(BLACK), pos.count<QUEEN >(BLACK) } };
-
-  e->value[WHITE] = int16_t(imbalance<WHITE>(pieceCount) / 16);
-  e->value[BLACK] = int16_t(imbalance<BLACK>(pieceCount) / 16);
 
   return e;
 }

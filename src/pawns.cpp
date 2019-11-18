@@ -173,6 +173,8 @@ Entry* probe(const Position& pos) {
   e->key = key;
   e->scores[WHITE] = evaluate<WHITE>(pos, e);
   e->scores[BLACK] = evaluate<BLACK>(pos, e);
+
+  // Initialize all remaining entries
   e->kingSquares[WHITE] = e->kingSquares[BLACK] = SQ_NONE;
   e->kingSafety[WHITE] = e->kingSafety[BLACK] = SCORE_ZERO;
   e->castlingRights[WHITE] = e->castlingRights[BLACK] = NO_CASTLING;

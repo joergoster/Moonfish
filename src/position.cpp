@@ -754,6 +754,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   Square to = to_sq(m);
   Piece pc = piece_on(from);
   Piece captured = type_of(m) == ENPASSANT ? make_piece(them, PAWN) : piece_on(to);
+  bool bishopPair = (bishop_pair(WHITE) == bishop_pair(BLACK));
 
   assert(color_of(pc) == us);
   assert(captured == NO_PIECE || color_of(captured) == (type_of(m) != CASTLING ? them : us));
@@ -803,6 +804,12 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       // Update material hash key and prefetch access to materialTable
       k ^= Zobrist::psq[captured][capsq];
       st->materialKey ^= Zobrist::psq[captured][pieceCount[captured]];
+
+      // Handle bishop pair
+      if (   type_of(captured) == BISHOP
+          && bishopPair != (bishop_pair(WHITE) == bishop_pair(BLACK)))
+          st->materialKey ^= Zobrist::bishopPair;
+
       prefetch(thisThread->materialTable[st->materialKey]);
 
       // Reset rule 50 counter
@@ -857,6 +864,12 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           st->pawnKey ^= Zobrist::psq[pc][to];
           st->materialKey ^=  Zobrist::psq[promotion][pieceCount[promotion]-1]
                             ^ Zobrist::psq[pc][pieceCount[pc]];
+          // Handle bishop pair
+          if (   type_of(promotion) == BISHOP
+              && bishopPair != (bishop_pair(WHITE) == bishop_pair(BLACK)))
+              st->materialKey ^= Zobrist::bishopPair;
+
+          prefetch(thisThread->materialTable[st->materialKey]);
 
           // Update material
           st->nonPawnMaterial[us] += PieceValue[MG][promotion];

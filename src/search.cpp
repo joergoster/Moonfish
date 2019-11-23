@@ -78,7 +78,7 @@ namespace {
     return (r + 520) / 1024 + (!i && r > 999);
   }
 
-  constexpr int futility_move_count(bool improving, int depth) {
+  constexpr int futility_move_count(bool improving, Depth depth) {
     return (5 + depth * depth) * (1 + improving) / 2 - 1;
   }
 
@@ -343,7 +343,7 @@ void Thread::search() {
   bool reducedDepthSearch;
 
   for (int i = 7; i > 0; i--)
-      (ss-i)->continuationHistory = &this->continuationHistory[0][NO_PIECE][0]; // Use as a sentinel
+      (ss-i)->continuationHistory = &this->continuationHistory[0][0][NO_PIECE][0]; // Use as a sentinel
 
   bestValue = alpha = -VALUE_INFINITE;
   delta = VALUE_ZERO;
@@ -618,17 +618,17 @@ namespace {
     Move ttMove, move, excludedMove, bestMove;
     Depth extension, newDepth;
     Value bestValue, value, ttValue, eval, maxValue, oldAlpha;
-    bool ttHit, ttPv, inCheck, givesCheck, improving, doLMR, priorCapture;
-    bool captureOrPromotion, doFullDepthSearch, moveCountPruning, ttCapture;
+    bool ttHit, ttPv, inCheck, givesCheck, improving, didLMR, priorCapture;
+    bool captureOrPromotion, doFullDepthSearch, moveCountPruning, ttCapture, singularLMR;
     Piece movedPiece;
-    int moveCount, captureCount, quietCount, singularLMR;
+    int moveCount, captureCount, quietCount;
 
     // Step 1. Initialize node
     Thread* thisThread = pos.this_thread();
     inCheck = pos.checkers();
     priorCapture = pos.captured_piece();
     Color us = pos.side_to_move();
-    moveCount = captureCount = quietCount = singularLMR = ss->moveCount = 0;
+    moveCount = captureCount = quietCount = ss->moveCount = 0;
     bestValue = -VALUE_INFINITE;
     maxValue = VALUE_INFINITE;
     oldAlpha = alpha;
@@ -846,7 +846,7 @@ namespace {
         Depth R = (835 + 70 * depth) / 256 + std::min(int(eval - beta) / 185, 3);
 
         ss->currentMove = MOVE_NULL;
-        ss->continuationHistory = &thisThread->continuationHistory[0][NO_PIECE][0];
+        ss->continuationHistory = &thisThread->continuationHistory[0][0][NO_PIECE][0];
 
         pos.do_null_move(st);
 
@@ -894,13 +894,17 @@ namespace {
                && probCutCount < 2 + 2 * cutNode)
             if (move != excludedMove && pos.legal(move))
             {
+                assert(pos.capture_or_promotion(move));
+                assert(depth >= 5);
+
+                captureOrPromotion = true;
                 probCutCount++;
 
                 ss->currentMove = move;
-                ss->continuationHistory = &thisThread->continuationHistory[priorCapture][pos.moved_piece(move)][to_sq(move)];
-
-                assert(depth >= 5);
-
+                ss->continuationHistory = &thisThread->continuationHistory[inCheck]
+                                                                          [captureOrPromotion]
+                                                                          [pos.moved_piece(move)]
+                                                                          [to_sq(move)];
                 pos.do_move(move, st);
 
                 // Perform a preliminary qsearch to verify that the move holds
@@ -929,9 +933,10 @@ namespace {
 
 moves_loop: // When in check, search starts from here
 
-    const PieceToHistory* contHist[] = { (ss-1)->continuationHistory, (ss-2)->continuationHistory,
-                                          nullptr, (ss-4)->continuationHistory,
-                                          nullptr, (ss-6)->continuationHistory };
+    const PieceToHistory* contHist[] = { (ss-1)->continuationHistory,
+                                         (ss-2)->continuationHistory, nullptr,
+                                         (ss-4)->continuationHistory, nullptr,
+                                         (ss-6)->continuationHistory };
 
     Move countermove = thisThread->counterMoves[pos.piece_on(prevSq)][prevSq];
 
@@ -941,8 +946,8 @@ moves_loop: // When in check, search starts from here
                                       countermove,
                                       ss->killers);
 
-    value = bestValue; // Workaround a bogus 'uninitialized' warning under gcc
-    moveCountPruning = false;
+    value = bestValue;
+    singularLMR = moveCountPruning = false;
     ttCapture = ttMove && pos.capture_or_promotion(ttMove);
 
     // Mark this node as being searched
@@ -989,8 +994,7 @@ moves_loop: // When in check, search starts from here
           moveCountPruning = moveCount >= futility_move_count(improving, depth);
 
           if (   !captureOrPromotion
-              && !givesCheck
-              && (!PvNode || !pos.advanced_pawn_push(move) || pos.non_pawn_material(~us) > BishopValueMg))
+              && !givesCheck)
           {
               // Reduced depth of the next LMR search
               int lmrDepth = std::max(newDepth - reduction(improving, depth, moveCount), 0);
@@ -1042,10 +1046,7 @@ moves_loop: // When in check, search starts from here
           if (value < singularBeta)
           {
               extension = 1;
-              singularLMR++;
-
-              if (value < singularBeta - std::min(4 * depth, 36))
-                  singularLMR++;
+              singularLMR = true;
           }
 
           // Multi-cut pruning
@@ -1088,7 +1089,7 @@ moves_loop: // When in check, search starts from here
 
       // Update the current move (this must be done after singular extension search)
       ss->currentMove = move;
-      ss->continuationHistory = &thisThread->continuationHistory[priorCapture][movedPiece][to_sq(move)];
+      ss->continuationHistory = &thisThread->continuationHistory[inCheck][captureOrPromotion][movedPiece][to_sq(move)];
 
       // Step 15. Make the move
       pos.do_move(move, st, givesCheck);
@@ -1101,7 +1102,8 @@ moves_loop: // When in check, search starts from here
           && (  !captureOrPromotion
               || moveCountPruning
               || ss->staticEval + PieceValue[EG][pos.captured_piece()] <= alpha
-              || cutNode))
+              || cutNode
+              || thisThread->ttHitAverage < 384 * ttHitAverageResolution * ttHitAverageWindow / 1024))
       {
           Depth r = reduction(improving, depth, moveCount);
 
@@ -1122,7 +1124,8 @@ moves_loop: // When in check, search starts from here
               r--;
 
           // Decrease reduction if ttMove has been singularly extended
-          r -= singularLMR;
+          if (singularLMR)
+              r -= 2;
 
           if (!captureOrPromotion)
           {
@@ -1169,17 +1172,17 @@ moves_loop: // When in check, search starts from here
 
           value = -search<NonPV>(pos, ss+1, -(alpha+1), -alpha, d, true);
 
-          doFullDepthSearch = (value > alpha && d != newDepth), doLMR = true;
+          doFullDepthSearch = (value > alpha && d != newDepth), didLMR = true;
       }
       else
-          doFullDepthSearch = !PvNode || moveCount > 1, doLMR = false;
+          doFullDepthSearch = !PvNode || moveCount > 1, didLMR = false;
 
       // Step 17. Full depth search when LMR is skipped or fails high
       if (doFullDepthSearch)
       {
           value = -search<NonPV>(pos, ss+1, -(alpha+1), -alpha, newDepth, !cutNode);
 
-          if (doLMR && !captureOrPromotion)
+          if (didLMR && !captureOrPromotion)
           {
               int bonus = value > alpha ?  stat_bonus(newDepth)
                                         : -stat_bonus(newDepth);
@@ -1343,7 +1346,7 @@ moves_loop: // When in check, search starts from here
     Move ttMove, move, bestMove;
     Depth ttDepth;
     Value bestValue, value, ttValue, futilityValue, futilityBase, oldAlpha;
-    bool ttHit, pvHit, inCheck, givesCheck, evasionPrunable, priorCapture;
+    bool ttHit, pvHit, inCheck, givesCheck, captureOrPromotion, evasionPrunable;
     int moveCount;
 
     if (PvNode)
@@ -1353,7 +1356,6 @@ moves_loop: // When in check, search starts from here
     (ss+1)->ply = ss->ply + 1;
     bestMove = MOVE_NONE;
     inCheck = pos.checkers();
-    priorCapture = pos.captured_piece();
     moveCount = 0;
     oldAlpha = alpha; // To flag BOUND_EXACT when eval above alpha
 
@@ -1424,9 +1426,10 @@ moves_loop: // When in check, search starts from here
         futilityBase = bestValue + 153;
     }
 
-    const PieceToHistory* contHist[] = { (ss-1)->continuationHistory, (ss-2)->continuationHistory,
-                                          nullptr, (ss-4)->continuationHistory,
-                                          nullptr, (ss-6)->continuationHistory };
+    const PieceToHistory* contHist[] = { (ss-1)->continuationHistory,
+                                         (ss-2)->continuationHistory, nullptr,
+                                         (ss-4)->continuationHistory, nullptr,
+                                         (ss-6)->continuationHistory };
 
     // Initialize a MovePicker object for the current position, and prepare
     // to search the moves. Because the depth is <= 0 here, only captures,
@@ -1442,6 +1445,7 @@ moves_loop: // When in check, search starts from here
     {
       assert(is_ok(move));
 
+      captureOrPromotion = pos.capture_or_promotion(move);
       givesCheck = pos.gives_check(move);
 
       moveCount++;
@@ -1477,7 +1481,7 @@ moves_loop: // When in check, search starts from here
 
       // Don't search moves with negative SEE values
       if (  (!inCheck || evasionPrunable)
-          && (!givesCheck || !(pos.blockers_for_king(~pos.side_to_move()) & from_sq(move)))
+          && !(givesCheck && pos.is_discovery_check_on_king(~pos.side_to_move(), move))
           && !pos.see_ge(move))
           continue;
 
@@ -1492,7 +1496,7 @@ moves_loop: // When in check, search starts from here
       }
 
       ss->currentMove = move;
-      ss->continuationHistory = &thisThread->continuationHistory[priorCapture][pos.moved_piece(move)][to_sq(move)];
+      ss->continuationHistory = &thisThread->continuationHistory[inCheck][captureOrPromotion][pos.moved_piece(move)][to_sq(move)];
 
       // Make and search the move
       pos.do_move(move, st, givesCheck);

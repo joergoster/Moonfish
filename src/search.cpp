@@ -157,7 +157,6 @@ namespace {
 
   Value value_to_tt(Value v, int ply);
   Value value_from_tt(Value v, int ply);
-  void update_pv(std::vector<Move>& pv, Move move, std::vector<Move>& childPv);
   void update_continuation_histories(Stack* ss, Piece pc, Square to, int bonus);
   void update_quiet_stats(const Position& pos, Stack* ss, Move move, Move* quiets, int quietCount, int bonus);
   void update_capture_stats(const Position& pos, Move move, Move* captures, int captureCount, int bonus);
@@ -415,7 +414,7 @@ void Thread::search() {
           }
 
           // Reset UCI info selDepth for each depth and each PV line
-          selDepth = 0;
+          selDepth = 1;
 
           // Reset aspiration window starting size
           if (rootDepth >= 4)
@@ -590,18 +589,6 @@ namespace {
     constexpr bool PvNode = NT == PV;
     const bool rootNode = PvNode && ss->ply == 0;
 
-    // Check if we have an upcoming move which draws by repetition, or
-    // if the opponent had an alternative move earlier to this position.
-    if (   pos.rule50_count() >= 3
-        && alpha < VALUE_DRAW
-        && !rootNode
-        && pos.has_game_cycle(ss->ply))
-    {
-        alpha = value_draw(pos.this_thread());
-        if (alpha >= beta)
-            return alpha;
-    }
-
     // Dive into quiescence search when the depth reaches zero
     if (depth <= 0)
         return qsearch<NT>(pos, ss, alpha, beta);
@@ -633,16 +620,32 @@ namespace {
     maxValue = VALUE_INFINITE;
     oldAlpha = alpha;
 
+    // Refresh pv
+    if (PvNode)
+        ss->pv.clear();
+
     // Check for the available remaining time
     if (thisThread == Threads.main())
         static_cast<MainThread*>(thisThread)->check_time();
 
-    // Used to send selDepth info to GUI (selDepth counts from 1, ply from 0)
-    if (PvNode && thisThread->selDepth < ss->ply + 1)
-        thisThread->selDepth = ss->ply + 1;
+    // Used to send selDepth info to GUI
+    if (PvNode && thisThread->selDepth < ss->ply)
+        thisThread->selDepth = ss->ply;
 
     if (!rootNode)
     {
+        // Check if we have an upcoming move which draws by repetition, or
+        // if the opponent had an alternative move earlier to this position.
+        if (   pos.rule50_count() >= 3
+            && alpha < VALUE_DRAW
+            && pos.has_game_cycle(ss->ply))
+        {
+            alpha = value_draw(pos.this_thread());
+
+            if (alpha >= beta)
+                return alpha;
+        }
+
         // Step 2. Check for aborted search and immediate draw
         if (   Threads.stop.load(std::memory_order_relaxed)
             || pos.is_draw(ss->ply)
@@ -658,6 +661,7 @@ namespace {
         // mate. In this case return a fail-high score.
         alpha = std::max(mated_in(ss->ply), alpha);
         beta = std::min(mate_in(ss->ply+1), beta);
+
         if (alpha >= beta)
             return alpha;
     }
@@ -929,6 +933,9 @@ namespace {
         tte = TT.probe(posKey, ttHit);
         ttValue = ttHit ? value_from_tt(tte->value(), ss->ply) : VALUE_NONE;
         ttMove = ttHit ? tte->move() : MOVE_NONE;
+
+        // Reset pv after IID
+        ss->pv.clear();
     }
 
 moves_loop: // When in check, search starts from here
@@ -1199,7 +1206,7 @@ moves_loop: // When in check, search starts from here
       // parent node fail low with value <= alpha and try another move.
       if (PvNode && (moveCount == 1 || (value > alpha && (rootNode || value < beta))))
       {
-          ss->pv.clear();
+//          ss->pv.clear();
           value = -search<PV>(pos, ss+1, -beta, -alpha, newDepth, false);
       }
 
@@ -1227,7 +1234,7 @@ moves_loop: // When in check, search starts from here
               rm.selDepth = thisThread->selDepth;
               rm.pv.resize(1);
 
-              for (auto& m : ss->pv)
+              for (auto& m : (ss+1)->pv)
                   rm.pv.push_back(m);
 
               // We record how often the best move has been changed in each
@@ -1252,7 +1259,15 @@ moves_loop: // When in check, search starts from here
               bestMove = move;
 
               if (PvNode && !rootNode) // Update pv even in fail-high case
-                  update_pv((ss-1)->pv, move, ss->pv);
+              {
+                  // Reset and insert current best move
+                  ss->pv.clear();
+                  ss->pv.push_back(move);
+
+                  // Append child pv
+                  for (auto& m : (ss+1)->pv)
+                      ss->pv.push_back(m);
+              }
 
               if (PvNode && value < beta) // Update alpha! Always alpha < beta
                   alpha = value;
@@ -1349,15 +1364,20 @@ moves_loop: // When in check, search starts from here
     bool ttHit, pvHit, inCheck, givesCheck, captureOrPromotion, evasionPrunable;
     int moveCount;
 
-    if (PvNode)
-        (ss-1)->pv.clear();
-
     Thread* thisThread = pos.this_thread();
     (ss+1)->ply = ss->ply + 1;
     bestMove = MOVE_NONE;
     inCheck = pos.checkers();
     moveCount = 0;
     oldAlpha = alpha; // To flag BOUND_EXACT when eval above alpha
+
+    if (PvNode)
+    {
+        ss->pv.clear();
+
+        if (thisThread->selDepth < ss->ply)
+            thisThread->selDepth = ss->ply;
+    }
 
     // Check for an immediate draw or maximum ply reached
     if (   pos.is_draw(ss->ply)
@@ -1515,7 +1535,13 @@ moves_loop: // When in check, search starts from here
               bestMove = move;
 
               if (PvNode) // Update pv even in fail-high case
-                  update_pv((ss-1)->pv, move, ss->pv);
+              {
+                  ss->pv.clear();
+                  ss->pv.push_back(move);
+
+                  for (auto& m : (ss+1)->pv)
+                      ss->pv.push_back(m);
+              }
 
               if (PvNode && value < beta) // Update alpha here!
                   alpha = value;
@@ -1563,18 +1589,6 @@ moves_loop: // When in check, search starts from here
     return  v == VALUE_NONE             ? VALUE_NONE
           : v >= VALUE_MATE_IN_MAX_PLY  ? v - ply
           : v <= VALUE_MATED_IN_MAX_PLY ? v + ply : v;
-  }
-
-
-  // update_pv() adds current move and appends child pv
-
-  void update_pv(std::vector<Move>& pv, Move move, std::vector<Move>& childPv) {
-
-    pv.clear();
-    pv.push_back(move);
-
-    for (auto& m : childPv)
-        pv.push_back(m);
   }
 
 

@@ -276,7 +276,7 @@ void MainThread::search() {
   Thread* bestThread = this;
 
   // Check if there are threads with a better score than main thread
-  if (    Options["MultiPV"] == 1
+  if (   (Options["MultiPV"] == 1 || Limits.mate)
       && !Limits.depth
       && !(Skill(Options["Skill Level"]).enabled() || Options["UCI_LimitStrength"])
       &&  rootMoves[0].pv[0] != MOVE_NONE)
@@ -482,6 +482,7 @@ void Thread::search() {
                   alpha = std::max(bestValue - delta, -VALUE_INFINITE);
 
                   failedHighCnt = 0;
+
                   if (mainThread)
                       mainThread->stopOnPonderhit = false;
               }
@@ -504,9 +505,18 @@ void Thread::search() {
               assert(alpha >= -VALUE_INFINITE && beta <= VALUE_INFINITE);
           }
 
-          // Sort the PV lines searched so far and update the GUI
+          // Sort the PV lines searched so far
           std::stable_sort(rootMoves.begin() + pvFirst, rootMoves.begin() + pvIdx + 1);
 
+          // Have we found a "mate in x"?
+          // We take care to only stop with a complete PV
+          if (   Limits.mate
+              && bestValue >= VALUE_MATE_IN_MAX_PLY
+              && VALUE_MATE - bestValue <= 2 * Limits.mate
+              && int(rootMoves[0].pv.size()) == 2 * Limits.mate - 1)
+              Threads.stop = true;
+
+          // Let the main thread update the GUI
           if (    mainThread
               && (Threads.stop || pvIdx + 1 == multiPV || Time.elapsed() > 3000))
               sync_cout << UCI::pv(rootPos, rootDepth, alpha, beta) << sync_endl;
@@ -520,12 +530,7 @@ void Thread::search() {
          lastBestMoveDepth = rootDepth;
       }
 
-      // Have we found a "mate in x"?
-      if (   Limits.mate
-          && bestValue >= VALUE_MATE_IN_MAX_PLY
-          && VALUE_MATE - bestValue <= 2 * Limits.mate)
-          Threads.stop = true;
-
+      // Helper threads may continue with the next iteration
       if (!mainThread)
           continue;
 
@@ -567,6 +572,7 @@ void Thread::search() {
       }
   }
 
+  // Let the helper threads return
   if (!mainThread)
       return;
 
@@ -1205,10 +1211,7 @@ moves_loop: // When in check, search starts from here
       // high (in the latter case search only if value < beta), otherwise let the
       // parent node fail low with value <= alpha and try another move.
       if (PvNode && (moveCount == 1 || (value > alpha && (rootNode || value < beta))))
-      {
-//          ss->pv.clear();
           value = -search<PV>(pos, ss+1, -beta, -alpha, newDepth, false);
-      }
 
       // Step 18. Undo move
       pos.undo_move(move);

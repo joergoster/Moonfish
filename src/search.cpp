@@ -822,14 +822,18 @@ namespace {
         tte->save(posKey, VALUE_NONE, ttPv, BOUND_NONE, DEPTH_NONE, MOVE_NONE, eval);
     }
 
+    improving =   ss->staticEval >= (ss-2)->staticEval
+               || (ss-2)->staticEval == VALUE_NONE;
+
+    // No early pruning during the first iterations
+    if (thisThread->rootDepth <= 6)
+        goto moves_loop;
+
     // Step 7. Razoring (~2 Elo)
     if (   !rootNode // The required rootNode PV handling is not available in qsearch
         &&  depth < 2
         &&  eval <= alpha - RazorMargin)
         return qsearch<NT>(pos, ss, alpha, beta);
-
-    improving =   ss->staticEval >= (ss-2)->staticEval
-               || (ss-2)->staticEval == VALUE_NONE;
 
     // Step 8. Futility pruning: child node (~30 Elo)
     if (   !PvNode
@@ -999,7 +1003,8 @@ moves_loop: // When in check, search starts from here
       newDepth = depth - 1 + extension;
 
       // Step 13. Pruning at shallow depth (~170 Elo)
-      if (  !rootNode
+      if (  !PvNode
+          && thisThread->rootDepth > 6
           && pos.non_pawn_material(us)
           && bestValue > VALUE_MATED_IN_MAX_PLY)
       {

@@ -357,6 +357,21 @@ ScaleFactor Endgame<KBPsK>::operator()(const Position& pos) const {
           return SCALE_FACTOR_DRAW;
   }
 
+  // Check for the fortress draw in KBPK
+  if (    pos.count<PAWN>(strongSide) == 1
+      && !more_than_one(pos.pieces(weakSide))
+      && (pawnsFile == FILE_B || pawnsFile == FILE_G))
+  {
+      // Assume strongSide is white and the pawn is on files A-D
+      Square pawnSq     = normalize(pos, strongSide, pos.square<PAWN>(strongSide));
+      Square weakKingSq = normalize(pos, strongSide, pos.square<KING>(weakSide));
+      Square bishopSq   = normalize(pos, strongSide, pos.square<BISHOP>(strongSide));
+
+      if (    pawnSq == SQ_B6 && bishopSq == SQ_A7
+          && (weakKingSq == SQ_B7 || weakKingSq == SQ_A8))
+          return SCALE_FACTOR_DRAW;
+  }
+
   // If all the pawns are on the same B or G file, then it's potentially a draw
   if (    (pawnsFile == FILE_B || pawnsFile == FILE_G)
       && !(pos.pieces(PAWN) & ~file_bb(pawnsFile))
@@ -736,8 +751,7 @@ ScaleFactor Endgame<KBPKN>::operator()(const Position& pos) const {
 }
 
 
-/// KNP vs K. There is a single rule: if the pawn is a rook pawn on the 7th rank
-/// and the defending king prevents the pawn from advancing, the position is drawn.
+/// KNP vs K. There are two drawn positions with a rook pawn
 template<>
 ScaleFactor Endgame<KNPK>::operator()(const Position& pos) const {
 
@@ -745,11 +759,21 @@ ScaleFactor Endgame<KNPK>::operator()(const Position& pos) const {
   assert(verify_material(pos, weakSide, VALUE_ZERO, 0));
 
   // Assume strongSide is white and the pawn is on files A-D
-  Square pawnSq     = normalize(pos, strongSide, pos.square<PAWN>(strongSide));
-  Square weakKingSq = normalize(pos, strongSide, pos.square<KING>(weakSide));
+  Square pawnSq       = normalize(pos, strongSide, pos.square<PAWN>(strongSide));
+  Square knightSq     = normalize(pos, strongSide, pos.square<KNIGHT>(strongSide));
+  Square strongKingSq = normalize(pos, strongSide, pos.square<KING>(strongSide));
+  Square weakKingSq   = normalize(pos, strongSide, pos.square<KING>(weakSide));
 
-  if (pawnSq == SQ_A7 && distance(SQ_A8, weakKingSq) <= 1)
-      return SCALE_FACTOR_DRAW;
+  if (pawnSq == SQ_A7)
+  {
+      if (weakKingSq == SQ_A8 || weakKingSq == SQ_B7)
+          return SCALE_FACTOR_DRAW;
+
+      else if ((weakKingSq == SQ_C8 || weakKingSq == SQ_C7)
+          &&  strongKingSq == SQ_A8
+          && (strongSide == pos.side_to_move()) != opposite_colors(weakKingSq, knightSq))
+          return SCALE_FACTOR_DRAW;
+  }
 
   return SCALE_FACTOR_NONE;
 }

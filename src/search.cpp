@@ -845,13 +845,15 @@ namespace {
     // Step 9. Null move search with verification search (~40 Elo)
     if (    doNull
         && !PvNode
+        && !excludedMove
         && (ss-1)->currentMove != MOVE_NULL
         && (ss-1)->statScore < 22661
         &&  eval >= beta
         &&  eval >= ss->staticEval
         &&  ss->staticEval >= beta - 33 * depth + 299 - improving * 30
-        && !excludedMove
         &&  pos.non_pawn_material(us)
+        &&  thisThread->selDepth + 5 > thisThread->rootDepth
+        && !(depth > 12 && MoveList<LEGAL>(pos).size() < 4)
         && (ss->ply >= thisThread->nmpMinPly || us != thisThread->nmpColor))
     {
         assert(eval - beta >= 0);
@@ -896,43 +898,44 @@ namespace {
     // Step 10. ProbCut (~10 Elo)
     // If we have a good enough capture and a reduced search returns a value
     // much above beta, we can (almost) safely prune the previous move.
-    if (   !PvNode
-        &&  depth >= 5
-        &&  abs(beta) < VALUE_MATE_IN_MAX_PLY)
+    if (  !PvNode
+        && depth >= 5
+        && abs(beta) < VALUE_MATE_IN_MAX_PLY)
     {
-        Value raisedBeta = std::min(beta + 191 - 46 * improving, VALUE_INFINITE);
-        MovePicker mp(pos, ttMove, raisedBeta - ss->staticEval, &thisThread->captureHistory);
         int probCutCount = 0;
+        Value raisedBeta = std::min(beta + 191 - 46 * improving, VALUE_INFINITE);
 
-        while (  (move = mp.next_move()) != MOVE_NONE
-               && probCutCount < 2 + 2 * cutNode)
-            if (move != excludedMove && pos.legal(move))
-            {
-                assert(pos.capture_or_promotion(move));
-                assert(depth >= 5);
+        // Initialize a MovePicker object for the current position
+        MovePicker mp(pos, ttMove, raisedBeta - ss->staticEval, &thisThread->captureHistory);
 
-                captureOrPromotion = true;
-                probCutCount++;
+        while ((move = mp.next_move()) != MOVE_NONE && probCutCount < 2 + 2 * cutNode) // try at most 4 moves
+        {
+            if (move == excludedMove || !pos.legal(move))
+                continue;
 
-                ss->currentMove = move;
-                ss->continuationHistory = &thisThread->continuationHistory[inCheck]
-                                                                          [captureOrPromotion]
-                                                                          [pos.moved_piece(move)]
-                                                                          [to_sq(move)];
-                pos.do_move(move, st);
+            assert(pos.capture_or_promotion(move));
+            assert(depth >= 5);
 
-                // Perform a preliminary qsearch to verify that the move holds
-                value = -qsearch<NonPV>(pos, ss+1, -raisedBeta, -raisedBeta+1);
+            captureOrPromotion = true;
+            probCutCount++;
 
-                // If the qsearch held, perform the regular search
-                if (value >= raisedBeta)
-                    value = -search<NonPV>(pos, ss+1, -raisedBeta, -raisedBeta+1, depth - 4, !cutNode);
+            ss->currentMove = move;
+            ss->continuationHistory = &thisThread->continuationHistory[inCheck][captureOrPromotion]
+                                                                      [pos.moved_piece(move)][to_sq(move)];
+            pos.do_move(move, st);
 
-                pos.undo_move(move);
+            // Perform a preliminary qsearch to verify that the move holds
+            value = -qsearch<NonPV>(pos, ss+1, -raisedBeta, -raisedBeta+1);
 
-                if (value >= raisedBeta)
-                    return value;
-            }
+            // If the qsearch held, perform the regular search
+            if (value >= raisedBeta)
+                value = -search<NonPV>(pos, ss+1, -raisedBeta, -raisedBeta+1, depth - 4, !cutNode);
+
+            pos.undo_move(move);
+
+            if (value >= raisedBeta)
+                return value;
+        }
     }
 
     // Step 11. Internal iterative deepening (~2 Elo)
@@ -1045,10 +1048,10 @@ moves_loop: // When in check, search starts from here
       // then that move is singular and should be extended. To verify this we do
       // a reduced search on all the other moves but the ttMove and if the
       // result is lower than ttValue minus a margin then we will extend the ttMove.
-      if (    depth >= 6
-          &&  move == ttMove
-          && !rootNode
+      if (   !rootNode
           && !excludedMove // Avoid recursive singular search
+          &&  depth >= 6
+          &&  move == ttMove
        /* &&  ttValue != VALUE_NONE Already implicit in the next condition */
           &&  abs(ttValue) < VALUE_KNOWN_WIN
           && (tte->bound() & BOUND_LOWER)
@@ -1056,9 +1059,9 @@ moves_loop: // When in check, search starts from here
           &&  pos.legal(move))
       {
           Value singularBeta = ttValue - 2 * depth;
-          Depth halfDepth = depth / 2;
+
           ss->excludedMove = move;
-          value = search<NonPV>(pos, ss, singularBeta - 1, singularBeta, halfDepth, cutNode);
+          value = search<NonPV>(pos, ss, singularBeta - 1, singularBeta, depth / 2, cutNode);
           ss->excludedMove = MOVE_NONE;
 
           if (value < singularBeta)

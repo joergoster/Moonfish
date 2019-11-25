@@ -52,15 +52,15 @@ namespace Trace {
   }
 
   std::ostream& operator<<(std::ostream& os, Score s) {
-    os << std::setw(5) << to_cp(mg_value(s)) << " "
-       << std::setw(5) << to_cp(eg_value(s));
+    os << std::setw(6) << to_cp(mg_value(s)) << " "
+       << std::setw(6) << to_cp(eg_value(s));
     return os;
   }
 
   std::ostream& operator<<(std::ostream& os, Term t) {
 
     if (t == INITIATIVE || t == TOTAL)
-        os << " ----  ----"    << " | " << " ----  ----";
+        os << "  ----   ----"    << " | " << "  ----   ----";
     else
         os << scores[t][WHITE] << " | " << scores[t][BLACK];
 
@@ -73,8 +73,7 @@ using namespace Trace;
 
 namespace {
 
-  // Threshold for lazy and space evaluation
-  constexpr Value LazyThreshold  = Value(1400);
+  // Threshold for space evaluation
   constexpr Value SpaceThreshold = Value(12222);
 
   // KingAttackWeights[PieceType] contains king attack weights by piece type
@@ -87,6 +86,9 @@ namespace {
   constexpr int KnightSafeCheck = 790;
 
 #define S(mg, eg) make_score(mg, eg)
+
+  // Maximum allowed material score
+  constexpr Score MaxMaterial = S(100 * PawnValueMg, 100 * PawnValueEg);
 
   // MobilityBonus[PieceType-2][attacked] contains bonuses for middle and end game,
   // indexed by piece type and number of attacked squares in the mobility area.
@@ -459,7 +461,8 @@ namespace {
 
     // Transform the kingDanger units into a Score, and subtract it from the evaluation
     if (kingDanger > 100)
-        score -= make_score(kingDanger * kingDanger / 4096, kingDanger / 16);
+        score -= make_score(std::min(kingDanger * kingDanger / 4096, 2 * int(QueenValueMg)),
+                            std::min(kingDanger / 16, 2 * int(PawnValueEg)));
 
     // Penalty when our king is on a pawnless flank
     if (!(pos.pieces(PAWN) & KingFlank[file_of(ksq)]))
@@ -774,35 +777,23 @@ namespace {
     if (me->specialized_eval_exists())
         return me->evaluate(pos);
 
-    // Initialize score by reading the incrementally updated scores included in
-    // the position object (material + piece square tables) and the material
+    // Initialize score by reading the incrementally updated scores included
+    // in the position object (material + piece square tables) and the material
     // imbalance. Score is computed internally from the white point of view.
-    Score score = pos.psq_score(WHITE) - pos.psq_score(BLACK);
+    Score score =  std::min(pos.psq_score(WHITE), MaxMaterial)
+                 - std::min(pos.psq_score(BLACK), MaxMaterial);
+
     score += me->imbalance(WHITE) - me->imbalance(BLACK);
+
+    // Add contempt
     score += pos.this_thread()->contempt;
 
     // Probe the pawn hash table and add the pawn eval
     pe = Pawns::probe(pos);
     score += pe->pawn_score(WHITE) - pe->pawn_score(BLACK);
 
-    // Early exit if score is high (Lazy Eval)
-    Value v = (mg_value(score) + eg_value(score)) / 2;
-
-    if (abs(v) > LazyThreshold + pos.non_pawn_material() / 64)
-    {
-        // In case of tracing add all available individual evaluation terms
-        if (T)
-        {
-            Trace::add(MATERIAL, pos.psq_score(WHITE), pos.psq_score(BLACK));
-            Trace::add(IMBALANCE, me->imbalance(WHITE), me->imbalance(BLACK));
-            Trace::add(PAWN, pe->pawn_score(WHITE), pe->pawn_score(BLACK));
-            Trace::add(TOTAL, score);
-        }
-
-       return pos.side_to_move() == WHITE ? v : -v;
-    }
-
     // Main evaluation begins here.
+
     // Initialize some tables/bitboards for both sides.
     initialize<WHITE>();
     initialize<BLACK>();
@@ -824,8 +815,8 @@ namespace {
     score += initiative(score);
 
     // Finally, interpolate between a middlegame and a (scaled by 'sf')
-    // endgame score if necessary.
-    v = mg_value(score);
+    // endgame score if necessary (tapered eval).
+    Value v = mg_value(score);
 
     if (me->game_phase() < PHASE_MIDGAME)
     {
@@ -839,7 +830,8 @@ namespace {
     // In case of tracing add all remaining individual evaluation terms
     if (T)
     {
-        Trace::add(MATERIAL, pos.psq_score(WHITE), pos.psq_score(BLACK));
+        Trace::add(MATERIAL, std::min(pos.psq_score(WHITE), MaxMaterial),
+                             std::min(pos.psq_score(BLACK), MaxMaterial));
         Trace::add(IMBALANCE, me->imbalance(WHITE), me->imbalance(BLACK));
         Trace::add(PAWN, pe->pawn_score(WHITE), pe->pawn_score(BLACK));
         Trace::add(MOBILITY, mobility[WHITE], mobility[BLACK]);
@@ -877,9 +869,9 @@ std::string Eval::trace(const Position& pos) {
 
   std::stringstream ss;
   ss << std::showpoint << std::noshowpos << std::fixed << std::setprecision(2)
-     << "     Term    |    White    |    Black    |    Total   \n"
-     << "             |   MG    EG  |   MG    EG  |   MG    EG \n"
-     << " ------------+-------------+-------------+------------\n"
+     << "     Term    |     White     |     Black     |     Total    \n"
+     << "             |   MG     EG   |   MG     EG   |   MG     EG  \n"
+     << " ------------+---------------+---------------+--------------\n"
      << "    Material | " << Term(MATERIAL)
      << "   Imbalance | " << Term(IMBALANCE)
      << "       Pawns | " << Term(PAWN)
@@ -893,7 +885,7 @@ std::string Eval::trace(const Position& pos) {
      << "      Passed | " << Term(PASSED)
      << "       Space | " << Term(SPACE)
      << "  Initiative | " << Term(INITIATIVE)
-     << " ------------+-------------+-------------+------------\n"
+     << " ------------+---------------+---------------+--------------\n"
      << "       Total | " << Term(TOTAL);
 
   ss << "\nTotal evaluation: " << to_cp(v) << " (white side)\n";

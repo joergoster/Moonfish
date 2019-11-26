@@ -66,6 +66,7 @@ namespace {
 
   // Razor and futility margins
   constexpr int RazorMargin = 661;
+
   Value futility_margin(Depth d, bool improving) {
     return Value(198 * (d - improving));
   }
@@ -1089,6 +1090,12 @@ moves_loop: // When in check, search starts from here
       else if (   move == ss->killers[0]
                && pos.advanced_pawn_push(move)
                && pos.pawn_passed(us, to_sq(move)))
+          extension = 1;
+
+      // Last captures extension
+      else if (   PvNode
+               && PieceValue[EG][pos.captured_piece()] > PawnValueEg
+               && pos.non_pawn_material() <= 2 * RookValueMg)
           extension = 1;
 
       // Castling extension

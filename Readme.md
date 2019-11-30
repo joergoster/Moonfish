@@ -6,6 +6,20 @@ For further information see (https://stockfishchess.org)
 and (https://github.com/official-stockfish/Stockfish).
 
 
+## Goals
+
+The first goal is to change some things I don't like in current Stockfish.
+For example, the handling of the pair of bishops, or the structure of
+the Hash Table. The fail-high research with a lower depth has already been changed.
+At this phase I will try to keep Moonfish still in sync with Stockfish.
+
+In the next step, I plan to change the search. For example,
+I want a valid score for each root move. This will also have some impact
+on a Multi PV search. From here on I will stop to incorporate patches from Stockfish.
+
+Later, I will eventually try to build an evaluation from scratch.
+
+
 ## Terms of use
 
 Moonfish is free and distributed under the **GNU General Public License version 3** (GPL v3).

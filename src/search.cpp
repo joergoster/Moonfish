@@ -854,8 +854,7 @@ namespace {
         &&  ss->staticEval >= beta - 33 * depth + 299 - improving * 30
         &&  pos.non_pawn_material(us)
         &&  thisThread->selDepth + 5 > thisThread->rootDepth
-        && !(depth > 12 && MoveList<LEGAL>(pos).size() < 4)
-        && (ss->ply >= thisThread->nmpMinPly || us != thisThread->nmpColor))
+        && !(depth > 12 && MoveList<LEGAL>(pos).size() < 4))
     {
         assert(eval - beta >= 0);
 
@@ -877,19 +876,11 @@ namespace {
             if (nullValue >= VALUE_MATE_IN_MAX_PLY)
                 nullValue = beta;
 
-            if (thisThread->nmpMinPly || (abs(beta) < VALUE_KNOWN_WIN && depth < 13))
+            if (abs(beta) < VALUE_KNOWN_WIN && depth < 11)
                 return nullValue;
 
-            assert(!thisThread->nmpMinPly); // Recursive verification is not allowed
-
-            // Do verification search at high depths, with null move pruning disabled
-            // for us, until ply exceeds nmpMinPly.
-            thisThread->nmpMinPly = ss->ply + 3 * (depth-R) / 4;
-            thisThread->nmpColor = us;
-
-            Value v = search<NonPV>(pos, ss, beta-1, beta, depth-R, false);
-
-            thisThread->nmpMinPly = 0;
+            // Do verification search at high depths with R=3
+            Value v = search<NonPV>(pos, ss, beta-1, beta, depth-3, false);
 
             if (v >= beta)
                 return nullValue;
@@ -930,7 +921,7 @@ namespace {
 
             // If the qsearch held, perform the regular search
             if (value >= raisedBeta)
-                value = -search<NonPV>(pos, ss+1, -raisedBeta, -raisedBeta+1, depth - 4, !cutNode);
+                value = -search<NonPV>(pos, ss+1, -raisedBeta, -raisedBeta+1, depth-4, !cutNode);
 
             pos.undo_move(move);
 
@@ -942,7 +933,7 @@ namespace {
     // Step 11. Internal iterative deepening (~2 Elo)
     if (depth >= 7 && !ttMove)
     {
-        search<NT>(pos, ss, alpha, beta, depth - 7, cutNode);
+        search<NT>(pos, ss, alpha, beta, depth-7, cutNode);
 
         tte = TT.probe(posKey, ttHit);
         ttValue = ttHit ? value_from_tt(tte->value(), ss->ply) : VALUE_NONE;
@@ -1062,7 +1053,7 @@ moves_loop: // When in check, search starts from here
           Value singularBeta = ttValue - 2 * depth;
 
           ss->excludedMove = move;
-          value = search<NonPV>(pos, ss, singularBeta - 1, singularBeta, depth / 2, cutNode);
+          value = search<NonPV>(pos, ss, singularBeta-1, singularBeta, depth/2, cutNode);
           ss->excludedMove = MOVE_NONE;
 
           if (value < singularBeta)
@@ -1439,7 +1430,8 @@ moves_loop: // When in check, search starts from here
                 ss->staticEval = bestValue = evaluate(pos);
 
             // Can ttValue be used as a better position evaluation?
-            if (    ttValue != VALUE_NONE
+            if (   !PvNode
+                &&  ttValue != VALUE_NONE
                 && (tte->bound() & (ttValue > bestValue ? BOUND_LOWER : BOUND_UPPER)))
                 bestValue = ttValue;
         }

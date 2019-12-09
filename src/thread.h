@@ -87,6 +87,7 @@ struct MainThread : public Thread {
 
   double previousTimeReduction;
   Value previousScore;
+  Value iterValue[4];
   int callsCnt;
   bool stopOnPonderhit;
   std::atomic_bool ponder;
@@ -115,8 +116,10 @@ private:
   uint64_t accumulate(std::atomic<uint64_t> Thread::* member) const {
 
     uint64_t sum = 0;
+
     for (Thread* th : *this)
         sum += (th->*member).load(std::memory_order_relaxed);
+
     return sum;
   }
 };

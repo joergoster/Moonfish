@@ -148,6 +148,7 @@ void ThreadPool::set(size_t requested) {
 
       while (size() < requested)
           push_back(new Thread(size()));
+
       clear();
 
       // Reallocate the hash with the new threadpool size

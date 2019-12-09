@@ -351,14 +351,12 @@ void Thread::search() {
   delta = VALUE_ZERO;
   beta = VALUE_INFINITE;
 
-  if (mainThread)
+  // Reset the array where we store the best scores from the last
+  // 4 iterations to the best score from the previous search.
+  if (mainThread && mainThread->previousScore != VALUE_INFINITE)
   {
-      if (mainThread->previousScore == VALUE_INFINITE)
-          for (int i = 0; i < 4; ++i)
-              mainThread->iterValue[i] = VALUE_ZERO;
-      else
-          for (int i = 0; i < 4; ++i)
-              mainThread->iterValue[i] = mainThread->previousScore;
+      for (int i = 0; i < 4; ++i)
+          mainThread->iterValue[i] = mainThread->previousScore;
   }
 
   size_t multiPV = Options["MultiPV"];
@@ -556,6 +554,8 @@ void Thread::search() {
           && !Threads.stop
           && !mainThread->stopOnPonderhit)
       {
+          // Compare the current score with the best score from the previous search
+          // and with the one 4 iterations earlier, and adjust time accordingly.
           double fallingEval = (354 +  6 * (mainThread->previousScore - bestValue)
                                     +  6 * (mainThread->iterValue[iterIdx]  - bestValue)) / 692.0;
           fallingEval = clamp(fallingEval, 0.5, 1.5);
@@ -585,6 +585,7 @@ void Thread::search() {
           }
       }
 
+      // Save the score and switch to the next index
       mainThread->iterValue[iterIdx] = bestValue;
       iterIdx = (iterIdx + 1) & 3;
   }

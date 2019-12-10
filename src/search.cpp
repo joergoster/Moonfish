@@ -65,10 +65,10 @@ namespace {
   constexpr uint64_t ttHitAverageResolution = 1024;
 
   // Razor and futility margins
-  constexpr int RazorMargin = 661;
+  constexpr int RazorMargin = 594;
 
   Value futility_margin(Depth d, bool improving) {
-    return Value(198 * (d - improving));
+    return Value(232 * (d - improving));
   }
 
   // Reductions lookup table, initialized at startup
@@ -351,8 +351,8 @@ void Thread::search() {
   delta = VALUE_ZERO;
   beta = VALUE_INFINITE;
 
-  // Reset the array where we store the best scores from the last
-  // 4 iterations to the best score from the previous search.
+  // Reset the iteration scores (the last 4 iterations, used by time-management)
+  // to the best score from the previous search.
   if (mainThread && mainThread->previousScore != VALUE_INFINITE)
   {
       for (int i = 0; i < 4; ++i)
@@ -840,8 +840,8 @@ namespace {
         tte->save(posKey, VALUE_NONE, ttPv, BOUND_NONE, DEPTH_NONE, MOVE_NONE, eval);
     }
 
-    improving =   ss->staticEval >= (ss-2)->staticEval
-               || (ss-2)->staticEval == VALUE_NONE;
+    improving =   (ss-2)->staticEval == VALUE_NONE  ? (ss->staticEval >= (ss-4)->staticEval
+               || (ss-4)->staticEval == VALUE_NONE) :  ss->staticEval >= (ss-2)->staticEval;
 
     // No early pruning during the first iterations
     if (thisThread->rootDepth <= 6)

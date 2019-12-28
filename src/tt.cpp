@@ -86,26 +86,27 @@ void TranspositionTable::resize(size_t mbSize) {
 void TranspositionTable::clear() {
 
   std::vector<std::thread> threads;
+  size_t threadCount = Options["Threads"];
 
-  for (size_t idx = 0; idx < Options["Threads"]; ++idx)
+  for (size_t idx = 0; idx < threadCount; ++idx)
   {
-      threads.emplace_back([this, idx]() {
+      threads.emplace_back([this, idx, threadCount]() {
 
           // Thread binding gives faster search on systems with a first-touch policy
-          if (Options["Threads"] > 8)
+          if (threadCount > 8)
               WinProcGroup::bindThisThread(idx);
 
           // Each thread will zero its part of the hash table
-          const size_t stride = clusterCount / Options["Threads"],
+          const size_t stride = clusterCount / threadCount,
                        start  = stride * idx,
-                       len    = idx != Options["Threads"] - 1 ?
+                       len    = idx != threadCount - 1 ?
                                 stride : clusterCount - start;
 
           std::memset(&table[start], 0, len * sizeof(Cluster));
       });
   }
 
-  for (std::thread& th: threads)
+  for (std::thread& th : threads)
       th.join();
 }
 
@@ -150,9 +151,11 @@ TTEntry* TranspositionTable::probe(const Key key, bool& found) const {
 int TranspositionTable::hashfull() const {
 
   int cnt = 0;
-  for (int i = 0; i < 1000 / ClusterSize; ++i)
-      for (int j = 0; j < ClusterSize; ++j)
-          cnt += (table[i].entry[j].genBound8 & 0xF8) == generation8;
+  int stride = clusterCount / 1000;
 
-  return cnt * 1000 / (ClusterSize * (1000 / ClusterSize));
+  for (int i = 0; i < 1000; ++i)
+      for (int j = 0; j < ClusterSize; ++j)
+          cnt += (table[i * stride + 1].entry[j].genBound8 & 0xF8) == generation8;
+
+  return cnt / ClusterSize;
 }

@@ -424,6 +424,11 @@ void Thread::search() {
                       break;
           }
 
+          // Flag this PV line for doing less LMR
+          shortPv =   rootDepth > 12
+                   && abs(rootMoves[pvIdx].previousScore) <= Value(2)
+                   && int(rootMoves[pvIdx].pv.size()) < rootDepth / 2;
+
           // Reset UCI info selDepth for each depth and each PV line
           selDepth = 1;
 
@@ -1166,6 +1171,10 @@ moves_loop: // When in check, search starts from here
               // Increase reduction if ttMove is a capture (~0 Elo)
               if (ttCapture)
                   r++;
+
+              // Decrease reduction for PV lines with a short pv
+              if (thisThread->shortPv)
+                  r--;
 
               // Increase reduction for cut nodes (~5 Elo)
               if (cutNode)

@@ -60,7 +60,7 @@ public:
 
   Pawns::Table pawnsTable;
   Material::Table materialTable;
-  size_t pvIdx, pvLast;
+  size_t pvIdx, pvLast, pvLines;
   uint64_t ttHitAverage;
   bool shortPv;
   int selDepth;

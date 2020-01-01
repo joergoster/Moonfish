@@ -93,17 +93,6 @@ namespace {
     return VALUE_DRAW + Value(2 * (thisThread->nodes & 1) - 1);
   }
 
-  // Skill structure is used to implement strength limit
-  struct Skill {
-    explicit Skill(int l) : level(l) {}
-    bool enabled() const { return level < 20; }
-    bool time_to_pick(Depth depth) const { return depth == 1 + level; }
-    Move pick_best(size_t multiPV);
-
-    int level;
-    Move best = MOVE_NONE;
-  };
-
   // Breadcrumbs are used to mark nodes as being searched by a given thread
   struct Breadcrumb {
     std::atomic<Thread*> thread;
@@ -280,7 +269,6 @@ void MainThread::search() {
   // Check if there are threads with a better score than main thread
   if (   (Options["MultiPV"] == 1 || Limits.mate)
       && !Limits.depth
-      && !(Skill(Options["Skill Level"]).enabled() || Options["UCI_LimitStrength"])
       &&  rootMoves[0].pv[0] != MOVE_NONE)
   {
       std::map<Move, int64_t> votes;
@@ -359,27 +347,7 @@ void Thread::search() {
           mainThread->iterValue[i] = mainThread->previousScore;
   }
 
-  size_t multiPV = size_t(Options["MultiPV"]);
-
-  // Pick integer skill levels, but non-deterministically round up or down
-  // such that the average integer skill corresponds to the input floating point one.
-  // UCI_Elo is converted to a suitable fractional skill level, using anchoring
-  // to CCRL Elo (goldfish 1.13 = 2000) and a fit through Ordo derived Elo
-  // for match (TC 60+0.6) results spanning a wide range of k values.
-  PRNG rng(now());
-  double floatLevel = Options["UCI_LimitStrength"] ?
-                        clamp(std::pow((Options["UCI_Elo"] - 1346.6) / 143.4, 1 / 0.806), 0.0, 20.0) :
-                        double(Options["Skill Level"]);
-  int intLevel = int(floatLevel) +
-                 ((floatLevel - int(floatLevel)) * 1024 > rng.rand<unsigned>() % 1024  ? 1 : 0);
-  Skill skill(intLevel);
-
-  // When playing with strength handicap enable MultiPV search that we will
-  // use behind the scenes to retrieve a set of possible moves.
-  if (skill.enabled())
-      multiPV = std::max(multiPV, size_t(4));
-
-  multiPV = std::min(multiPV, rootMoves.size());
+  pvLines = std::min(size_t(Options["MultiPV"]), rootMoves.size());
   ttHitAverage = ttHitAverageWindow * ttHitAverageResolution / 2;
 
   int ct = int(Options["Contempt"]) * PawnValueEg / 100; // From centipawns
@@ -408,22 +376,14 @@ void Thread::search() {
       // Save the last iteration's scores before first PV line is searched and
       // all the move scores except the (new) PV are set to -VALUE_INFINITE.
       for (RootMove& rm : rootMoves)
+      {
           rm.previousScore = rm.score;
-
-      size_t pvFirst = 0;
-      pvLast = 0;
+          rm.score = -VALUE_INFINITE;
+      }
 
       // MultiPV loop. We perform a full root search for each PV line
-      for (pvIdx = 0; pvIdx < multiPV && !Threads.stop; ++pvIdx)
+      for (pvIdx = 0; pvIdx < pvLines && !Threads.stop; ++pvIdx)
       {
-          if (pvIdx == pvLast)
-          {
-              pvFirst = pvLast;
-              for (pvLast++; pvLast < rootMoves.size(); pvLast++)
-                  if (rootMoves[pvLast].tbRank != rootMoves[pvFirst].tbRank)
-                      break;
-          }
-
           // Flag this PV line for doing less LMR
           shortPv =   rootDepth > 12
                    && abs(rootMoves[pvIdx].previousScore) <= Value(2)
@@ -470,22 +430,22 @@ void Thread::search() {
 
               // Bring the best move to the front. It is critical that sorting
               // is done with a stable algorithm because all the values but the
-              // first and eventually the new best one are set to -VALUE_INFINITE
+              // first and eventually the new best one are set to -VALUE_INFINITE,
               // and we want to keep the same order for all the moves except the
-              // new PV that goes to the front. Note that in case of MultiPV
-              // search the already searched PV lines are preserved.
-              std::stable_sort(rootMoves.begin() + pvIdx, rootMoves.begin() + pvLast);
+              // new PV that goes to the front. Note that in case of a MultiPV
+              // search this may only be done on the last PV line, and that already
+              // searched PV lines are preserved.
+              if (pvIdx + 1 == pvLines)
+                  std::stable_sort(rootMoves.begin() + pvIdx, rootMoves.end());
 
-              // If search has been stopped, we break immediately. Sorting is
-              // safe because RootMoves is still valid, although it refers to
-              // the previous iteration.
+              // If search has been stopped, we break immediately
               if (Threads.stop)
                   break;
 
               // When failing high/low give some update (without cluttering
               // the UI) before a re-search.
               if (   mainThread
-                  && multiPV == 1
+                  && pvLines == 1
                   && (bestValue <= alpha || bestValue >= beta)
                   && Time.elapsed() > 3000)
                   sync_cout << UCI::pv(rootPos, rootDepth, alpha, beta) << sync_endl;
@@ -522,7 +482,7 @@ void Thread::search() {
           }
 
           // Sort the PV lines searched so far
-          std::stable_sort(rootMoves.begin() + pvFirst, rootMoves.begin() + pvIdx + 1);
+          std::stable_sort(rootMoves.begin(), rootMoves.begin() + pvIdx + 1);
 
           // Have we found a "mate in x"?
           // We take care to only stop with a complete PV
@@ -534,7 +494,7 @@ void Thread::search() {
 
           // Let the main thread update the GUI
           if (    mainThread
-              && (Threads.stop || pvIdx + 1 == multiPV || Time.elapsed() > 3000))
+              && (Threads.stop || pvIdx + 1 == pvLines || Time.elapsed() > 3000))
               sync_cout << UCI::pv(rootPos, rootDepth, alpha, beta) << sync_endl;
       }
 
@@ -549,10 +509,6 @@ void Thread::search() {
       // Helper threads may continue with the next iteration
       if (!mainThread)
           continue;
-
-      // If skill level is enabled and time is up, pick a sub-optimal best move
-      if (skill.enabled() && skill.time_to_pick(rootDepth))
-          skill.pick_best(multiPV);
 
       // Do we have time for the next iteration? Can we stop searching now?
       if (    Limits.use_time_management()
@@ -600,11 +556,7 @@ void Thread::search() {
       return;
 
   mainThread->previousTimeReduction = timeReduction;
-
-  // If skill level is enabled, swap best PV line with the sub-optimal one
-  if (skill.enabled())
-      std::swap(rootMoves[0], *std::find(rootMoves.begin(), rootMoves.end(),
-                skill.best ? skill.best : skill.pick_best(multiPV)));
+  return;
 }
 
 
@@ -714,9 +666,9 @@ namespace {
 
     // Step 4. Transposition table lookup. We don't want the score of a partial
     // search to overwrite a previous full search TT value, so we use a different
-    // position key in case of an excluded move.
+     // and basically unused position key in case of an excluded move.
     excludedMove = ss->excludedMove;
-    posKey = pos.key() ^ Key(excludedMove << 16); // Isn't a very good hash
+    posKey = excludedMove ? 0 : pos.key();
     tte = TT.probe(posKey, ttHit);
     ttValue = ttHit ? value_from_tt(tte->value(), ss->ply) : VALUE_NONE;
     ttMove =  rootNode ? thisThread->rootMoves[thisThread->pvIdx].pv[0]
@@ -953,7 +905,7 @@ namespace {
     }
 
     // Step 11. Internal iterative deepening (~2 Elo)
-    if (depth >= 7 && !ttMove)
+    if (depth >= 8 && !ttMove)
     {
         search<NT>(pos, ss, alpha, beta, depth-7, cutNode);
 
@@ -998,11 +950,19 @@ moves_loop: // When in check, search starts from here
 
       // At root obey the "searchmoves" option and skip moves not listed in Root
       // Move List. As a consequence any illegal move is also skipped. In MultiPV
-      // mode we also skip PV moves which have been already searched and those
-      // of lower "TB rank" if we are in a TB root position.
-      if (rootNode && !std::count(thisThread->rootMoves.begin() + thisThread->pvIdx,
-                                  thisThread->rootMoves.begin() + thisThread->pvLast, move))
-          continue;
+      // mode we not only skip PV moves which have already been searched and those
+      // of lower "TB rank" if we are in a TB root position, but also those moves
+      // which will later be searched as PV moves anyways.
+      if (rootNode)
+      {
+          if (!std::count(thisThread->rootMoves.begin() + thisThread->pvIdx,
+                          thisThread->rootMoves.end(), move))
+              continue;
+
+          if (   thisThread->pvIdx + 1 < thisThread->pvLines
+              && move != ttMove)
+              continue;
+      }
 
       ss->moveCount = ++moveCount;
 
@@ -1690,41 +1650,8 @@ moves_loop: // When in check, search starts from here
         update_continuation_histories(ss, pos.moved_piece(quiets[i]), to_sq(quiets[i]), -bonus);
     }
   }
-
-  // When playing with strength handicap, choose best move among a set of RootMoves
-  // using a statistical rule dependent on 'level'. Idea by Heinz van Saanen.
-
-  Move Skill::pick_best(size_t multiPV) {
-
-    const RootMoves& rootMoves = Threads.main()->rootMoves;
-    static PRNG rng(now()); // PRNG sequence should be non-deterministic
-
-    // RootMoves are already sorted by score in descending order
-    Value topScore = rootMoves[0].score;
-    int delta = std::min(topScore - rootMoves[multiPV - 1].score, PawnValueMg);
-    int weakness = 120 - 2 * level;
-    int maxScore = -VALUE_INFINITE;
-
-    // Choose best move. For each move score we add two terms, both dependent on
-    // weakness. One is deterministic and bigger for weaker levels, and one is
-    // random. Then we choose the move with the resulting highest score.
-    for (size_t i = 0; i < multiPV; ++i)
-    {
-        // This is our magic formula
-        int push = (  weakness * int(topScore - rootMoves[i].score)
-                    + delta * (rng.rand<unsigned>() % weakness)) / 128;
-
-        if (rootMoves[i].score + push >= maxScore)
-        {
-            maxScore = rootMoves[i].score + push;
-            best = rootMoves[i].pv[0];
-        }
-    }
-
-    return best;
-  }
-
 } // namespace
+
 
 /// MainThread::check_time() is used to print debug info and, more importantly,
 /// to detect when we are out of available time and thus stop the search.
@@ -1845,6 +1772,7 @@ bool RootMove::extract_ponder_from_tt(Position& pos) {
     return pv.size() > 1;
 }
 
+
 void Tablebases::rank_root_moves(Position& pos, Search::RootMoves& rootMoves) {
 
     RootInTB = false;
@@ -1877,8 +1805,7 @@ void Tablebases::rank_root_moves(Position& pos, Search::RootMoves& rootMoves) {
     if (RootInTB)
     {
         // Sort moves according to TB rank
-        std::sort(rootMoves.begin(), rootMoves.end(),
-                  [](const RootMove &a, const RootMove &b) { return a.tbRank > b.tbRank; } );
+        std::stable_sort(rootMoves.begin(), rootMoves.end());
 
         // Probe during search only if DTZ is not available and we are winning
         if (dtz_available || rootMoves[0].tbScore <= VALUE_DRAW)

@@ -1068,8 +1068,8 @@ bool Position::see_ge(Move m, Value threshold) const {
   PieceType Pt;
   int result = 1;
 
-  // Find all attackers to the destination square, with the moving piece
-  // removed, but possibly an X-ray attacker added behind it.
+  // Find all attackers to the destination square, with the
+  // moving and the captured piece removed.
   Bitboard occupied = pieces() ^ from ^ to;
   Bitboard attackers = attackers_to(to, occupied);
 
@@ -1107,9 +1107,7 @@ bool Position::see_ge(Move m, Value threshold) const {
           if (Pt == KING)
               break;
 
-          b = stmAttackers & byTypeBB[Pt];
-
-          if (b) // New attacker found
+          if ((b = stmAttackers & byTypeBB[Pt])) // New attacker found
               break;
       }
 

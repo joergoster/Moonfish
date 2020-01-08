@@ -364,10 +364,9 @@ void Thread::search() {
   contempt = (us == WHITE ?  make_score(ct, ct / 2)
                           : -make_score(ct, ct / 2));
 
-  // Iterative deepening loop until requested to stop or the target depth is reached
-  while (   ++rootDepth < MAX_PLY
-         && !Threads.stop
-         && !(Limits.depth && mainThread && rootDepth > Limits.depth))
+  // Iterative deepening loop until requested to stop
+  // or the maximum search depth is reached.
+  while (++rootDepth < MAX_PLY && !Threads.stop)
   {
       // Age out PV variability metric
       if (mainThread)
@@ -509,6 +508,10 @@ void Thread::search() {
       // Helper threads may continue with the next iteration
       if (!mainThread)
           continue;
+
+      // Have we reached the specified search depth?
+      if (Limits.depth && completedDepth >= Limits.depth)
+          Threads.stop = true;
 
       // Do we have time for the next iteration? Can we stop searching now?
       if (    Limits.use_time_management()

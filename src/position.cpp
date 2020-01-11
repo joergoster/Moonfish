@@ -841,7 +841,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           st->nonPawnMaterial[us] += PieceValue[MG][promotion];
       }
 
-      // Update pawn hash key and prefetch access to pawnsTable
+      // Update pawn hash key
       st->pawnKey ^= Zobrist::psq[pc][from] ^ Zobrist::psq[pc][to];
 
       // Reset rule 50 draw counter
@@ -968,7 +968,7 @@ void Position::do_castling(Color us, Square from, Square& to, Square& rfrom, Squ
 }
 
 
-/// Position::do(undo)_null_move() is used to do(undo) a "null move": It flips
+/// Position::do(undo)_null_move() is used to do(undo) a "null move": it flips
 /// the side to move without executing any move on the board.
 
 void Position::do_null_move(StateInfo& newSt) {
@@ -1151,7 +1151,7 @@ bool Position::see_ge(Move m, Value threshold) const {
       assert(Pt != KING);
   }
 
-  return result;
+  return bool(result);
 }
 
 

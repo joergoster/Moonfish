@@ -710,7 +710,9 @@ namespace {
                 update_continuation_histories(ss, pos.moved_piece(ttMove), to_sq(ttMove), penalty);
             }
         }
-        return ttValue;
+
+        if (pos.rule50_count() < 90)
+            return ttValue;
     }
 
     // Step 5. Tablebases probe
@@ -1335,8 +1337,7 @@ moves_loop: // When in check, search starts from here
         tte->save(posKey, value_to_tt(bestValue, ss->ply), ttPv,
                   bestValue >= beta     ? BOUND_LOWER :
                   bestValue <= oldAlpha ? BOUND_UPPER : BOUND_EXACT,
-                  pos.rule50_count() > 90 ? std::min(depth + 6, MAX_PLY - 1) : depth,
-                  bestMove, ss->staticEval);
+                  depth, bestMove, ss->staticEval);
 
     assert(bestValue > -VALUE_INFINITE && bestValue < VALUE_INFINITE);
 

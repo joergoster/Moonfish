@@ -1068,8 +1068,8 @@ bool Position::see_ge(Move m, Value threshold) const {
   PieceType Pt;
   int result = 1;
 
-  // Find all attackers to the destination square, with the
-  // moving and the captured piece removed.
+  // Find all attackers to the destination square,
+  // with the moving and the captured piece removed.
   Bitboard occupied = pieces() ^ from ^ to;
   Bitboard attackers = attackers_to(to, occupied);
 
@@ -1089,12 +1089,12 @@ bool Position::see_ge(Move m, Value threshold) const {
       if (!stmAttackers)
           break;
 
-      // Don't allow pinned pieces to attack (except the king) as long as
-      // any pinners are on their original square.
+      // Don't allow pinned pieces to attack (except the king)
+      // as long as any pinners are on their original square.
       if (st->pinners[~stm] & occupied)
           stmAttackers &= ~st->blockersForKing[stm];
 
-      // 2nd check: if stm has no more attackers, stm loses!
+      // 2nd check
       if (!stmAttackers)
           break;
 
@@ -1123,8 +1123,8 @@ bool Position::see_ge(Move m, Value threshold) const {
           break;
       }
 
-      // Add next attacker's value and negamax the balance with
-      // alpha = balance, beta = balance+1.
+      // Add next attacker's value and negamax the balance
+      // with alpha = balance, beta = balance+1.
       //
       //      (balance, balance+1) -> (-balance-1, -balance)
       //

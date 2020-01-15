@@ -29,6 +29,7 @@
 
 #include "types.h"
 
+const std::string compiler_info();
 const std::string engine_info(bool to_uci = false);
 void prefetch(void* addr);
 void start_logger(const std::string& fname);

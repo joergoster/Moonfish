@@ -32,7 +32,7 @@ ThreadPool Threads; // Global object
 
 
 /// Thread constructor launches the thread and waits until it goes to sleep
-/// in idle_loop(). Note that 'searching' and 'exit' should be already set.
+/// in idle_loop(). Note that 'searching' and 'exit' should already be set.
 
 Thread::Thread(size_t n) : idx(n), stdThread(&Thread::idle_loop, this) {
 
@@ -41,7 +41,7 @@ Thread::Thread(size_t n) : idx(n), stdThread(&Thread::idle_loop, this) {
 
 
 /// Thread destructor wakes up the thread in idle_loop() and waits
-/// for its termination. Thread should be already waiting.
+/// for its termination. Thread should already be waiting.
 
 Thread::~Thread() {
 
@@ -154,12 +154,12 @@ void ThreadPool::set(size_t requested) {
       // Reallocate the hash with the new threadpool size
       TT.resize(Options["Hash"]);
 
-      // Init thread number dependent search params.
+      // Init thread number dependent search params
       Search::init();
   }
 }
 
-/// ThreadPool::clear() sets threadPool data to initial values.
+/// ThreadPool::clear() sets threadPool data to initial values
 
 void ThreadPool::clear() {
 

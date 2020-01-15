@@ -73,7 +73,11 @@ namespace {
     while (is >> token && (m = UCI::to_move(pos, token)) != MOVE_NONE)
     {
         states->emplace_back();
-        pos.do_move(m, states->back());
+
+        if (m == MOVE_NULL)
+            pos.do_null_move(states->back());
+        else
+            pos.do_move(m, states->back());
     }
   }
 
@@ -96,7 +100,10 @@ namespace {
         value += (value.empty() ? "" : " ") + token;
 
     if (Options.count(name))
+    {
         Options[name] = value;
+        sync_cout << "info string " << name << " set to " << value << sync_endl;
+    }
     else
         sync_cout << "No such option: " << name << sync_endl;
   }
@@ -311,6 +318,9 @@ Move UCI::to_move(const Position& pos, string& str) {
 
   if (str.length() == 5) // Junior could send promotion piece in uppercase
       str[4] = char(tolower(str[4]));
+
+  if (str == "0000")
+      return MOVE_NULL;
 
   for (const auto& m : MoveList<LEGAL>(pos))
       if (str == UCI::move(m, pos.is_chess960()))

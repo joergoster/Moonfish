@@ -83,6 +83,7 @@ extern Bitboard PawnAttacks[COLOR_NB][SQUARE_NB];
 
 /// Magic holds all magic bitboards relevant data for a single square
 struct Magic {
+
   Bitboard  mask;
   Bitboard  magic;
   Bitboard* attacks;
@@ -152,13 +153,13 @@ inline Bitboard file_bb(Square s) {
 /// shift() moves a bitboard one step along direction D
 
 template<Direction D>
-constexpr Bitboard shift(Bitboard b) {
-  return  D == NORTH      ?  b             << 8 : D == SOUTH      ?  b             >> 8
-        : D == NORTH+NORTH?  b             <<16 : D == SOUTH+SOUTH?  b             >>16
-        : D == EAST       ? (b & ~FileHBB) << 1 : D == WEST       ? (b & ~FileABB) >> 1
-        : D == NORTH_EAST ? (b & ~FileHBB) << 9 : D == NORTH_WEST ? (b & ~FileABB) << 7
-        : D == SOUTH_EAST ? (b & ~FileHBB) >> 7 : D == SOUTH_WEST ? (b & ~FileABB) >> 9
-        : 0;
+inline Bitboard shift(Bitboard b) {
+
+  constexpr int hs = D & 7;  //horizontal steps
+  static_assert(hs <= 1 || hs == 7, "Horizontal steps limited to 1.");
+
+  b = (hs == 1) ? b & ~FileHBB : (hs == 7) ? b & ~FileABB : b;
+  return D > 0 ? b << D : b >> -D;
 }
 
 

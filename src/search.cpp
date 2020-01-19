@@ -234,6 +234,7 @@ void MainThread::search() {
       if (TB::RootInTB)
           tbHits = rootMoves.size();
 
+      // Wake up the helper threads
       for (Thread* th : Threads)
           if (th != this)
               th->start_searching();
@@ -322,18 +323,18 @@ void Thread::search() {
   // which accesses its argument at ss-6, also near the root.
   // The latter is needed for statScores and killer initialization.
   Stack stack[MAX_PLY+10], *ss = stack+7;
-  Value bestValue, alpha, beta, delta;
-  Move  lastBestMove = MOVE_NONE;
-  Depth adjustedDepth, lastBestMoveDepth = 0;
-  MainThread* mainThread = (this == Threads.main() ? Threads.main() : nullptr);
-  double timeReduction = 1, totBestMoveChanges = 0;
-  Color us = rootPos.side_to_move();
-  int iterIdx = 0;
-  int failedHighCnt;
-  bool reducedDepthSearch;
 
   for (int i = 7; i > 0; i--)
       (ss-i)->continuationHistory = &this->continuationHistory[0][0][NO_PIECE][0]; // Use as a sentinel
+
+  MainThread* mainThread = (this == Threads.main() ? Threads.main() : nullptr);
+  Color us = rootPos.side_to_move();
+  Depth adjustedDepth, lastBestMoveDepth = 0;
+  Move lastBestMove = MOVE_NONE;
+  Value bestValue, alpha, beta, delta;
+  bool reducedDepthSearch;
+  double timeReduction = 1, totBestMoveChanges = 0;
+  int failedHighCnt, iterIdx = 0;
 
   bestValue = alpha = -VALUE_INFINITE;
   delta = VALUE_ZERO;
@@ -539,7 +540,7 @@ void Thread::search() {
           // Only one legal move, however, we want to search at least this depth
           bool oneLegalMove = rootMoves.size() == 1 && completedDepth >= 4;
 
-          // Spend much less time in a TB root position and syzygy fast play mode
+          // Spend much less time in a TB root position
           bool syzygyFastPlay =   TB::RootInTB
                                && Options["SyzygyFastPlay"]
                                && Time.elapsed() > Time.optimum() / 10;

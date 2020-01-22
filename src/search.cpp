@@ -88,11 +88,6 @@ namespace {
     return d > 15 ? -8 : 19 * d * d + 155 * d - 132;
   }
 
-  // Add a small random component to draw evaluations to avoid 3fold-blindness
-  Value value_draw(Thread* thisThread) {
-    return VALUE_DRAW + Value(2 * (thisThread->nodes & 1) - 1);
-  }
-
   // Breadcrumbs are used to mark nodes as being searched by a given thread
   struct Breadcrumb {
     std::atomic<Thread*> thread;
@@ -626,24 +621,12 @@ namespace {
 
     if (!rootNode)
     {
-        // Check if we have an upcoming move which draws by repetition, or
-        // if the opponent had an alternative move earlier to this position.
-        if (   pos.rule50_count() >= 3
-            && alpha < VALUE_DRAW
-            && pos.has_game_cycle(ss->ply))
-        {
-            alpha = value_draw(pos.this_thread());
-
-            if (alpha >= beta)
-                return alpha;
-        }
-
         // Step 2. Check for aborted search and immediate draw
         if (   Threads.stop.load(std::memory_order_relaxed)
             || pos.is_draw(ss->ply)
             || ss->ply >= MAX_PLY)
             return (ss->ply >= MAX_PLY && !inCheck) ? evaluate(pos)
-                                                    : value_draw(pos.this_thread());
+                                                    : VALUE_DRAW;
 
         // Step 3. Mate distance pruning. Even if we mate at the next move our score
         // would be at best mate_in(ss->ply+1), but if alpha is already bigger because
@@ -652,7 +635,7 @@ namespace {
         // signs applies also in the opposite condition of being mated instead of giving
         // mate. In this case return a fail-high score.
         alpha = std::max(mated_in(ss->ply), alpha);
-        beta = std::min(mate_in(ss->ply+1), beta);
+        beta  = std::min(mate_in(ss->ply+1), beta);
 
         if (alpha >= beta)
             return alpha;
@@ -788,9 +771,6 @@ namespace {
         if (eval == VALUE_NONE)
             ss->staticEval = eval = evaluate(pos);
 
-        if (eval == VALUE_DRAW)
-            eval = value_draw(thisThread);
-
         // Can ttValue be used as a better position evaluation?
         if (    ttValue != VALUE_NONE
             && (tte->bound() & (ttValue > eval ? BOUND_LOWER : BOUND_UPPER)))
@@ -810,12 +790,15 @@ namespace {
         tte->save(posKey, VALUE_NONE, ttPv, BOUND_NONE, DEPTH_NONE, MOVE_NONE, eval);
     }
 
-    improving =   (ss-2)->staticEval == VALUE_NONE  ? (ss->staticEval >= (ss-4)->staticEval
-               || (ss-4)->staticEval == VALUE_NONE) :  ss->staticEval >= (ss-2)->staticEval;
-
     // No early pruning during the first iterations
     if (thisThread->rootDepth <= 6)
+    {
+        improving = false;
         goto moves_loop;
+    }
+
+    improving =   (ss-2)->staticEval == VALUE_NONE  ? (ss->staticEval > (ss-4)->staticEval
+               || (ss-4)->staticEval == VALUE_NONE) :  ss->staticEval > (ss-2)->staticEval;
 
     // Step 7. Razoring (~2 Elo)
     if (   !rootNode // The required rootNode PV handling is not available in qsearch

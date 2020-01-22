@@ -153,7 +153,7 @@ public:
   bool is_chess960() const;
   Thread* this_thread() const;
   bool is_draw(int ply) const;
-  bool has_game_cycle(int ply) const;
+//  bool has_game_cycle(int ply) const;
   bool has_repeated() const;
   int rule50_count() const;
   Score psq_score(Color c) const;
@@ -354,9 +354,9 @@ inline int Position::rule50_count() const {
 }
 
 inline bool Position::bishop_pair(Color c) const {
-  return   pieceCount[make_piece(c, BISHOP)] > 1
-        && byColorBB[c] & byTypeBB[BISHOP] & LightSquares
-        && byColorBB[c] & byTypeBB[BISHOP] & DarkSquares;
+  return   more_than_one(pieces(c, BISHOP))
+        && pieces(c, BISHOP) & LightSquares
+        && pieces(c, BISHOP) & DarkSquares;
 }
 
 inline bool Position::opposite_bishops() const {

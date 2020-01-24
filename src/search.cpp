@@ -607,28 +607,53 @@ namespace {
     maxValue = VALUE_INFINITE;
     oldAlpha = alpha;
 
-    // Refresh pv
+    // Refresh pv and update selDepth
     if (PvNode)
+    {
         ss->pv.clear();
+        thisThread->selDepth = std::max(ss->ply, thisThread->selDepth);
+    }
 
-    // Check for the available remaining time
+    // Step 2. Check for the available remaining time
     if (thisThread == Threads.main())
         static_cast<MainThread*>(thisThread)->check_time();
 
-    // Used to send selDepth info to GUI
-    if (PvNode && thisThread->selDepth < ss->ply)
-        thisThread->selDepth = ss->ply;
-
+    // Step 3. Check for immediate return conditions
     if (!rootNode)
     {
-        // Step 2. Check for aborted search and immediate draw
-        if (   Threads.stop.load(std::memory_order_relaxed)
-            || pos.is_draw(ss->ply)
-            || ss->ply >= MAX_PLY)
-            return (ss->ply >= MAX_PLY && !inCheck) ? evaluate(pos)
-                                                    : VALUE_DRAW;
+        // Step 3a. Check for aborted search
+        if (Threads.stop.load(std::memory_order_relaxed))
+            return VALUE_ZERO;
 
-        // Step 3. Mate distance pruning. Even if we mate at the next move our score
+        // Step 3b. Check for insufficient material
+        if (!pos.count<PAWN>())
+        {
+            // One side with a minor or lone kings
+            if (pos.non_pawn_material() <= BishopValueMg)
+                return VALUE_DRAW;
+
+            // Each side has a bishop of the same color
+            if (    pos.non_pawn_material(WHITE) == BishopValueMg
+                &&  pos.non_pawn_material(BLACK) == BishopValueMg
+                && !pos.opposite_bishops())
+                return VALUE_DRAW;
+        }
+
+        // Step 3c. Check for draw by 50-move rule
+        if (    TB::UseRule50
+            &&  pos.rule50_count() == 100
+            && (!inCheck || MoveList<LEGAL>(pos).size()))
+            return VALUE_DRAW;
+
+        // Step 3d. Check for draw by repetition
+        if (pos.is_draw(ss->ply))
+            return VALUE_DRAW;
+
+        // Step 3e. Check for maximum ply reached
+        if (ss->ply >= MAX_PLY)
+            return !inCheck ? evaluate(pos) : beta;
+
+        // Step 3f. Mate distance pruning. Even if we mate at the next move our score
         // would be at best mate_in(ss->ply+1), but if alpha is already bigger because
         // a shorter mate was found upward in the tree then there is no need to search
         // because we will never beat the current alpha. Same logic but with reversed
@@ -1374,15 +1399,36 @@ moves_loop: // When in check, search starts from here
     if (PvNode)
     {
         ss->pv.clear();
-
-        if (thisThread->selDepth < ss->ply)
-            thisThread->selDepth = ss->ply;
+        thisThread->selDepth = std::max(ss->ply, thisThread->selDepth);
     }
 
-    // Check for an immediate draw or maximum ply reached
-    if (   pos.is_draw(ss->ply)
-        || ss->ply >= MAX_PLY)
-        return (ss->ply >= MAX_PLY && !inCheck) ? evaluate(pos) : VALUE_DRAW;
+    // Check for insufficient material
+    if (!pos.count<PAWN>())
+    {
+        // One side with a minor or lone kings
+        if (pos.non_pawn_material() <= BishopValueMg)
+            return VALUE_DRAW;
+
+        // Each side has a bishop of the same color
+        if (    pos.non_pawn_material(WHITE) == BishopValueMg
+            &&  pos.non_pawn_material(BLACK) == BishopValueMg
+            && !pos.opposite_bishops())
+            return VALUE_DRAW;
+    }
+
+    // Check for draw by 50-move rule
+    if (    TB::UseRule50
+        &&  pos.rule50_count() == 100
+        && (!inCheck || MoveList<LEGAL>(pos).size()))
+        return VALUE_DRAW;
+
+    // Check for draw by repetition
+    if (pos.is_draw(ss->ply))
+        return VALUE_DRAW;
+
+    // Check for maximum ply reached
+    if (ss->ply >= MAX_PLY)
+        return !inCheck ? evaluate(pos) : beta;
 
     assert(0 <= ss->ply && ss->ply < MAX_PLY);
 
@@ -1796,18 +1842,17 @@ void Tablebases::rank_root_moves(Position& pos, Search::RootMoves& rootMoves) {
         ProbeDepth = 0;
     }
 
-    /* TODO: return immediately with more pieces or castling still possible */
-    if (Cardinality >= popcount(pos.pieces()) && !pos.can_castle(ANY_CASTLING))
-    {
-        // Rank moves using DTZ tables
-        RootInTB = root_probe(pos, rootMoves);
+    if (pos.count<ALL_PIECES>() > Cardinality || pos.can_castle(ANY_CASTLING))
+        return;
 
-        if (!RootInTB)
-        {
-            // DTZ tables are missing; try to rank moves using WDL tables
-            dtz_available = false;
-            RootInTB = root_probe_wdl(pos, rootMoves);
-        }
+    // Rank moves using DTZ tables
+    RootInTB = root_probe(pos, rootMoves);
+
+    if (!RootInTB)
+    {
+        // DTZ tables are missing; try to rank moves using WDL tables
+        dtz_available = false;
+        RootInTB = root_probe_wdl(pos, rootMoves);
     }
 
     if (RootInTB)

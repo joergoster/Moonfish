@@ -1010,9 +1010,13 @@ moves_loop: // When in check, search starts from here
               if (!pos.see_ge(move, Value(-(32 - std::min(lmrDepth, 18)) * lmrDepth * lmrDepth)))
                   continue;
           }
-          else if (  !(givesCheck && extension)
-                   && !pos.see_ge(move, Value(-194) * depth)) // (~20 Elo)
-                  continue;
+          else if (!pos.see_ge(move, Value(-194) * depth)) // (~20 Elo)
+          {
+              if (captureOrPromotion && captureCount < 32)
+                  capturesSearched[captureCount++] = move;
+
+              continue;
+          }
       }
 
       // Step 14. Extensions (~70 Elo)
@@ -1145,7 +1149,7 @@ moves_loop: // When in check, search starts from here
               // hence break make_move(). (~5 Elo)
               else if (    type_of(move) == NORMAL
                        && !pos.see_ge(reverse_move(move)))
-                  r -= 2;
+                  r -= 2 + ttPv;
 
               ss->statScore =  thisThread->mainHistory[us][from_to(move)]
                              + (*contHist[0])[movedPiece][to_sq(move)]

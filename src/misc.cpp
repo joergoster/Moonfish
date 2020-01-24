@@ -128,9 +128,9 @@ public:
 
 const std::string compiler_info() {
 
-  #define STRINGIFY2(x) #x
-  #define STRINGIFY(x) STRINGIFY2(x)
-  #define VER_STRING(major, minor, patch) STRINGIFY(major) "." STRINGIFY(minor) "." STRINGIFY(patch)
+  #define stringify2(x) #x
+  #define stringify(x) stringify2(x)
+  #define make_version_string(major, minor, patch) stringify(major) "." stringify(minor) "." stringify(patch)
 
 /// Predefined macros hell:
 ///
@@ -144,20 +144,20 @@ const std::string compiler_info() {
 
   #ifdef __clang__
      compiler += "clang++ ";
-     compiler += VER_STRING(__clang_major__, __clang_minor__, __clang_patchlevel__);
+     compiler += make_version_string(__clang_major__, __clang_minor__, __clang_patchlevel__);
   #elif __INTEL_COMPILER
      compiler += "Intel compiler ";
      compiler += "(version ";
-     compiler += STRINGIFY(__INTEL_COMPILER) " update " STRINGIFY(__INTEL_COMPILER_UPDATE);
+     compiler += stringify(__INTEL_COMPILER) " update " stringify(__INTEL_COMPILER_UPDATE);
      compiler += ")";
   #elif _MSC_VER
      compiler += "MSVC ";
      compiler += "(version ";
-     compiler += STRINGIFY(_MSC_FULL_VER) "." STRINGIFY(_MSC_BUILD);
+     compiler += stringify(_MSC_FULL_VER) "." stringify(_MSC_BUILD);
      compiler += ")";
   #elif __GNUC__
      compiler += "g++ (GNUC) ";
-     compiler += VER_STRING(__GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
+     compiler += make_version_string(__GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
   #else
      compiler += "Unknown compiler ";
      compiler += "(unknown version)";
@@ -234,7 +234,7 @@ void dbg_print() {
 
   if (hits[0])
       cerr << "Total " << hits[0] << " Hits " << hits[1]
-           << " hit rate (%) " << 100 * hits[1] / hits[0] << endl;
+           << " hit rate (%) " << 100.0 * hits[1] / hits[0] << endl;
 
   if (means[0])
       cerr << "Total " << means[0] << " Mean "

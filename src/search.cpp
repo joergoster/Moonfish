@@ -324,9 +324,9 @@ void Thread::search() {
 
   MainThread* mainThread = (this == Threads.main() ? Threads.main() : nullptr);
   Color us = rootPos.side_to_move();
-  Depth adjustedDepth, lastBestMoveDepth = 0;
+  Depth adjustedDepth, pvDepth, lastBestMoveDepth = 0;
   Move lastBestMove = MOVE_NONE;
-  Value bestValue, alpha, beta, delta;
+  Value bestValue, alpha, beta, delta, bestScore, previousScore;
   bool reducedDepthSearch;
   double timeReduction = 1, totBestMoveChanges = 0;
   int failedHighCnt, iterIdx = 0;
@@ -376,6 +376,8 @@ void Thread::search() {
           rm.score = -VALUE_INFINITE;
       }
 
+      bestScore = rootMoves[0].previousScore;
+
       // MultiPV loop. We perform a full root search for each PV line
       for (pvIdx = 0; pvIdx < pvLines && !Threads.stop; ++pvIdx)
       {
@@ -386,11 +388,12 @@ void Thread::search() {
 
           // Reset UCI info selDepth for each depth and each PV line
           selDepth = 1;
+          pvDepth = rootDepth;
 
           // Reset aspiration window starting size
           if (rootDepth >= 4)
           {
-              Value previousScore = rootMoves[pvIdx].previousScore;
+              previousScore = rootMoves[pvIdx].previousScore;
               delta = Value(21 + abs(previousScore) / 256);
               alpha = std::max(previousScore - delta,-VALUE_INFINITE);
               beta  = std::min(previousScore + delta, VALUE_INFINITE);
@@ -400,11 +403,16 @@ void Thread::search() {
 
               contempt = (us == WHITE ?  make_score(dct, dct / 2)
                                       : -make_score(dct, dct / 2));
+
+              // Reduce the search depth for this PV line based on
+              // root move's previous score and number of PV line.
+              int diffScore = (bestScore - previousScore) / (PawnValueEg / 2);
+              pvDepth = std::max(rootDepth - (3 * diffScore + 2 * msb(pvIdx + 1)) / 2, std::max(rootDepth / 2, 4));
           }
 
           // Reset counters/flags to control a reduced fail-high search
           failedHighCnt = 0;
-          adjustedDepth = rootDepth;
+          adjustedDepth = pvDepth;
           reducedDepthSearch = false;
 
           // Start with a small aspiration window and, in the case of a fail
@@ -414,10 +422,10 @@ void Thread::search() {
           {
               // Set reduced search depth after the second fail-high
               if (   failedHighCnt == 2
-                  && rootDepth > 6)
+                  && pvDepth > 6)
               {
                   failedHighCnt = 0;
-                  adjustedDepth = rootDepth - 2;
+                  adjustedDepth = pvDepth - 2;
                   reducedDepthSearch = true;
               }
 

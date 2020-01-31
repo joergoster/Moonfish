@@ -343,7 +343,8 @@ void Thread::search() {
           mainThread->iterValue[i] = mainThread->previousScore;
   }
 
-  pvLines = std::min(size_t(Options["MultiPV"]), rootMoves.size());
+  size_t multiPV = std::min(size_t(Options["MultiPV"]), rootMoves.size());
+  pvLines = rootMoves.size();
   ttHitAverage = ttHitAverageWindow * ttHitAverageResolution / 2;
 
   int ct = Options["Contempt"] * PawnValueEg / 100; // From centipawns
@@ -406,8 +407,21 @@ void Thread::search() {
 
               // Reduce the search depth for this PV line based on
               // root move's previous score and number of PV line.
-              int diffScore = (bestScore - previousScore) / (PawnValueEg / 2);
-              pvDepth = std::max(rootDepth - (3 * diffScore + 2 * msb(pvIdx + 1)) / 2, std::max(rootDepth / 2, 4));
+              // TODO Also take into account: number of root moves, good or bad score,
+              // type of position, type of move (pawn move, checking move, capture/sacrifice etc.)
+              if (pvIdx)
+              {
+                  int diffScore = (bestScore - previousScore) / (PawnValueEg / 4);
+                  pvDepth = std::max(rootDepth - (3 * diffScore + 2 * msb(pvIdx + 1)) / 2, std::max(rootDepth / 2, 4));
+
+                  if (rootPos.gives_check(rootMoves[pvIdx].pv[0]))
+                      pvDepth += pvDepth + 6 < rootDepth ? 2 : 1;
+
+                  if (rootPos.capture_or_promotion(rootMoves[pvIdx].pv[0]))
+                      pvDepth += 1;
+
+                  pvDepth = std::min(pvDepth, rootDepth);
+              }
           }
 
           // Reset counters/flags to control a reduced fail-high search
@@ -438,8 +452,8 @@ void Thread::search() {
               // new PV that goes to the front. Note that in case of a MultiPV
               // search this may only be done on the last PV line, and that already
               // searched PV lines are preserved.
-              if (pvIdx + 1 == pvLines)
-                  std::stable_sort(rootMoves.begin() + pvIdx, rootMoves.end());
+//              if (pvIdx + 1 == pvLines)
+//                  std::stable_sort(rootMoves.begin() + pvIdx, rootMoves.end());
 
               // If search has been stopped, we break immediately
               if (Threads.stop)
@@ -447,10 +461,11 @@ void Thread::search() {
 
               // When failing high/low give some update (without cluttering
               // the UI) before a re-search.
-              if (   mainThread
-                  && pvLines == 1
+              if (    mainThread
+                  &&  multiPV == 1
+                  &&  pvIdx == 0 //|| bestValue > rootMoves[0].score)
                   && (bestValue <= alpha || bestValue >= beta)
-                  && Time.elapsed() > 3000)
+                  &&  Time.elapsed() > 3000)
                   sync_cout << UCI::pv(rootPos, rootDepth, alpha, beta) << sync_endl;
 
               // In case of failing low/high increase aspiration window and
@@ -497,7 +512,7 @@ void Thread::search() {
 
           // Let the main thread update the GUI
           if (    mainThread
-              && (Threads.stop || pvIdx + 1 == pvLines || Time.elapsed() > 3000))
+              && (Threads.stop || pvIdx + 1 <= multiPV)) // || Time.elapsed() > 5000))
               sync_cout << UCI::pv(rootPos, rootDepth, alpha, beta) << sync_endl;
       }
 
@@ -1782,7 +1797,7 @@ string UCI::pv(const Position& pos, Depth depth, Value alpha, Value beta) {
          << " multipv "  << i + 1
          << " score "    << UCI::value(v);
 
-      if (!tb && i == pvIdx)
+      if (!tb && pvIdx == 0 && multiPV == 1)
           ss << (v >= beta ? " lowerbound" : v <= alpha ? " upperbound" : "");
 
       ss << " nodes "    << nodesSearched

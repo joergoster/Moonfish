@@ -512,7 +512,7 @@ void Thread::search() {
 
           // Let the main thread update the GUI
           if (    mainThread
-              && (Threads.stop || pvIdx + 1 <= multiPV)) // || Time.elapsed() > 5000))
+              && (Threads.stop || pvIdx + 1 == multiPV || Time.elapsed() > 5000))
               sync_cout << UCI::pv(rootPos, rootDepth, alpha, beta) << sync_endl;
       }
 

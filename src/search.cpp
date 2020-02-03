@@ -417,7 +417,8 @@ void Thread::search() {
                   if (rootPos.gives_check(rootMoves[pvIdx].pv[0]))
                       pvDepth += pvDepth + 6 < rootDepth ? 2 : 1;
 
-                  if (rootPos.capture_or_promotion(rootMoves[pvIdx].pv[0]))
+                  if (   rootPos.capture_or_promotion(rootMoves[pvIdx].pv[0])
+                      || type_of(rootPos.piece_on(from_sq(rootMoves[pvIdx].pv[0]))) == PAWN)
                       pvDepth += 1;
 
                   pvDepth = std::min(pvDepth, rootDepth);
@@ -512,7 +513,7 @@ void Thread::search() {
 
           // Let the main thread update the GUI
           if (    mainThread
-              && (Threads.stop || pvIdx + 1 == multiPV || Time.elapsed() > 5000))
+              && (Threads.stop || pvIdx + 1 == multiPV || (Time.elapsed() > 5000 && pvIdx + 1 <= multiPV)))
               sync_cout << UCI::pv(rootPos, rootDepth, alpha, beta) << sync_endl;
       }
 

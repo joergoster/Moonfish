@@ -364,7 +364,7 @@ TBTable<WDL>::TBTable(const std::string& code) : TBTable() {
     StateInfo st;
     Position pos;
 
-    key = pos.set(code, WHITE, &st).material_key();
+    key = pos.set(code, WHITE, &st).endgame_key();
     pieceCount = pos.count<ALL_PIECES>();
     hasPawns = pos.pieces(PAWN);
 
@@ -383,7 +383,7 @@ TBTable<WDL>::TBTable(const std::string& code) : TBTable() {
     pawnCount[0] = pos.count<PAWN>(c ? WHITE : BLACK);
     pawnCount[1] = pos.count<PAWN>(c ? BLACK : WHITE);
 
-    key2 = pos.set(code, BLACK, &st).material_key();
+    key2 = pos.set(code, BLACK, &st).endgame_key();
 }
 
 template<>
@@ -680,7 +680,7 @@ Ret do_probe_table(const Position& pos, T* entry, WDLScore wdl, ProbeState* resu
     // KRvK, not KvKR. A position where stronger side is white will have its
     // material key == entry->key, otherwise we have to switch the color and
     // flip the squares before to lookup.
-    bool blackStronger = (pos.material_key() != entry->key);
+    bool blackStronger = (pos.endgame_key() != entry->key);
 
     int flipColor   = (symmetricBlackToMove || blackStronger) * 8;
     int flipSquares = (symmetricBlackToMove || blackStronger) * 56;
@@ -1143,7 +1143,7 @@ void* mapped(TBTable<Type>& e, const Position& pos) {
         b += std::string(popcount(pos.pieces(BLACK, pt)), PieceToChar[pt]);
     }
 
-    fname =  (e.key == pos.material_key() ? w + 'v' + b : b + 'v' + w)
+    fname =  (e.key == pos.endgame_key() ? w + 'v' + b : b + 'v' + w)
            + (Type == WDL ? ".rtbw" : ".rtbz");
 
     uint8_t* data = TBFile(fname).map(&e.baseAddress, &e.mapping, Type);
@@ -1161,7 +1161,7 @@ Ret probe_table(const Position& pos, ProbeState* result, WDLScore wdl = WDLDraw)
     if (pos.count<ALL_PIECES>() == 2) // KvK
         return Ret(WDLDraw);
 
-    TBTable<Type>* entry = TBTables.get<Type>(pos.material_key());
+    TBTable<Type>* entry = TBTables.get<Type>(pos.endgame_key());
 
     if (!entry || !mapped(*entry, pos))
         return *result = FAIL, Ret();

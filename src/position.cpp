@@ -54,7 +54,9 @@ constexpr Piece Pieces[] = { W_PAWN, W_KNIGHT, W_BISHOP, W_ROOK, W_QUEEN, W_KING
 } // namespace
 
 
-/// operator<<(Position) returns an ASCII representation of the position
+/// operator<<(Position) returns an ASCII representation of the position,
+/// all hash keys, any checker(s) by their corresponding square(s), the number
+/// of legal moves, and the result of a TB probing, if possible.
 
 std::ostream& operator<<(std::ostream& os, const Position& pos) {
 
@@ -72,6 +74,7 @@ std::ostream& operator<<(std::ostream& os, const Position& pos) {
      << "\nPositionKey: " << std::hex << std::uppercase << std::setfill('0') << std::setw(16) << pos.key()
      << "\nMaterialKey: " << pos.material_key()
      << "\nPawnKey:     " << pos.pawn_key()
+     << "\nEndgameKey:  " << pos.endgame_key()
      << std::setfill(' ') << std::dec << "\nCheckers: ";
 
   for (Bitboard b = pos.checkers(); b; )
@@ -79,7 +82,7 @@ std::ostream& operator<<(std::ostream& os, const Position& pos) {
 
   os << "\nLegal moves: " << MoveList<LEGAL>(pos).size();
 
-  if (    int(Tablebases::MaxCardinality) >= popcount(pos.pieces())
+  if (    Tablebases::MaxCardinality >= pos.count<ALL_PIECES>()
       && !pos.can_castle(ANY_CASTLING))
   {
       StateInfo st;
@@ -306,7 +309,7 @@ void Position::set_check_info(StateInfo* si) const {
 
 void Position::set_state(StateInfo* si) const {
 
-  si->key = si->materialKey = 0;
+  si->key = si->materialKey = si->endgameKey = 0;
   si->pawnKey = Zobrist::noPawns;
   si->nonPawnMaterial[WHITE] = si->nonPawnMaterial[BLACK] = VALUE_ZERO;
   si->checkersBB = attackers_to(square<KING>(sideToMove)) & pieces(~sideToMove);
@@ -338,8 +341,11 @@ void Position::set_state(StateInfo* si) const {
       for (int cnt = 0; cnt < pieceCount[pc]; ++cnt)
           si->materialKey ^= Zobrist::psq[pc][cnt];
 
+  si->endgameKey = si->materialKey;
+
   // Ensure correctness of material imbalance calculation in case of
   // one side having the bishop pair and the other side not.
+  // TODO Check again for correctness
   if (bishop_pair(WHITE) != bishop_pair(BLACK))
       si->materialKey ^= Zobrist::bishopPair;
 }
@@ -348,6 +354,8 @@ void Position::set_state(StateInfo* si) const {
 /// Position::set() is an overload to initialize the position object with
 /// the given endgame code string like "KBPKN". It is mainly a helper to
 /// get the material key out of an endgame code.
+/// Note: This is used by both, our own specialized endgame class
+/// and the Tablebase implementation.
 
 Position& Position::set(const string& code, Color c, StateInfo* si) {
 
@@ -356,6 +364,9 @@ Position& Position::set(const string& code, Color c, StateInfo* si) {
 
   string sides[] = { code.substr(code.find('K', 1)),      // Weak
                      code.substr(0, code.find('K', 1)) }; // Strong
+
+  assert(sides[0].length() > 0 && sides[0].length() < 7); // for max current 7-man TBs
+  assert(sides[1].length() > 0 && sides[1].length() < 7); // must be changed for 8-man
 
   std::transform(sides[c].begin(), sides[c].end(), sides[c].begin(), tolower);
 
@@ -733,6 +744,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       // Update material hash key and prefetch access to materialTable
       k ^= Zobrist::psq[captured][capsq];
       st->materialKey ^= Zobrist::psq[captured][pieceCount[captured]];
+      st->endgameKey = st->materialKey;
 
       // Handle bishop pair
       if (   type_of(captured) == BISHOP
@@ -793,6 +805,8 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           st->pawnKey ^= Zobrist::psq[pc][to];
           st->materialKey ^=  Zobrist::psq[promotion][pieceCount[promotion]-1]
                             ^ Zobrist::psq[pc][pieceCount[pc]];
+          st->endgameKey = st->materialKey;
+
           // Handle bishop pair
           if (   type_of(promotion) == BISHOP
               && bishopPair != (bishop_pair(WHITE) == bishop_pair(BLACK)))

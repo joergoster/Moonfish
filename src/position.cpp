@@ -354,24 +354,25 @@ void Position::set_state(StateInfo* si) const {
 /// Position::set() is an overload to initialize the position object with
 /// the given endgame code string like "KBPKN". It is mainly a helper to
 /// get the material key out of an endgame code.
-/// Note: This is used by both, our own specialized endgame class
+/// Note: This is used by both, our own specialized endgame code
 /// and the Tablebase implementation.
 
 Position& Position::set(const string& code, Color c, StateInfo* si) {
 
-  assert(code.length() > 0 && code.length() < 8);
+  // We don't make any assumptions on the length of the passed string here,
+  // because TB files are encoded like KRvK, and our own functions like KRK.
   assert(code[0] == 'K');
 
   string sides[] = { code.substr(code.find('K', 1)),      // Weak
                      code.substr(0, code.find('K', 1)) }; // Strong
 
-  assert(sides[0].length() > 0 && sides[0].length() < 7); // for max current 7-man TBs
-  assert(sides[1].length() > 0 && sides[1].length() < 7); // must be changed for 8-man
+  assert(sides[0].length() > 0 && sides[1].length() > 0);
+  assert(sides[0].length() + sides[1].length() < 8); // for max of current 7-man TBs
 
   std::transform(sides[c].begin(), sides[c].end(), sides[c].begin(), tolower);
 
   string fenStr = "8/" + sides[0] + char(8 - sides[0].length() + '0') + "/8/8/8/8/"
-                       + sides[1] + char(8 - sides[1].length() + '0') + "/8 w - - 0 10";
+                       + sides[1] + char(8 - sides[1].length() + '0') + "/8 w - - 0 1";
 
   return set(fenStr, false, si, nullptr);
 }

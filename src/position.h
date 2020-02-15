@@ -39,7 +39,6 @@ struct StateInfo {
   // Copied when making a move
   Key    pawnKey;
   Key    materialKey;
-  Key    endgameKey;
   Value  nonPawnMaterial[COLOR_NB];
   int    castlingRights;
   int    rule50;
@@ -145,7 +144,6 @@ public:
   // Accessing hash keys
   Key key() const;
   Key key_after(Move m) const;
-  Key endgame_key() const;
   Key material_key() const;
   Key pawn_key() const;
 
@@ -335,10 +333,6 @@ inline Key Position::pawn_key() const {
 
 inline Key Position::material_key() const {
   return st->materialKey;
-}
-
-inline Key Position::endgame_key() const {
-  return st->endgameKey;
 }
 
 inline Score Position::psq_score(Color c) const {

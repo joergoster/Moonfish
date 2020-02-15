@@ -41,7 +41,7 @@ namespace Zobrist {
   Key psq[PIECE_NB][SQUARE_NB];
   Key enpassant[FILE_NB];
   Key castling[CASTLING_RIGHT_NB];
-  Key bishopPair, noPawns, side;
+  Key noPawns, side;
 }
 
 namespace {
@@ -74,7 +74,6 @@ std::ostream& operator<<(std::ostream& os, const Position& pos) {
      << "\nPositionKey: " << std::hex << std::uppercase << std::setfill('0') << std::setw(16) << pos.key()
      << "\nMaterialKey: " << pos.material_key()
      << "\nPawnKey:     " << pos.pawn_key()
-     << "\nEndgameKey:  " << pos.endgame_key()
      << std::setfill(' ') << std::dec << "\nCheckers: ";
 
   for (Bitboard b = pos.checkers(); b; )
@@ -126,7 +125,6 @@ void Position::init() {
       }
   }
 
-  Zobrist::bishopPair = rng.rand<Key>();
   Zobrist::noPawns = rng.rand<Key>();
   Zobrist::side = rng.rand<Key>();
 }
@@ -309,7 +307,7 @@ void Position::set_check_info(StateInfo* si) const {
 
 void Position::set_state(StateInfo* si) const {
 
-  si->key = si->materialKey = si->endgameKey = 0;
+  si->key = si->materialKey = 0;
   si->pawnKey = Zobrist::noPawns;
   si->nonPawnMaterial[WHITE] = si->nonPawnMaterial[BLACK] = VALUE_ZERO;
   si->checkersBB = attackers_to(square<KING>(sideToMove)) & pieces(~sideToMove);
@@ -340,14 +338,6 @@ void Position::set_state(StateInfo* si) const {
   for (Piece pc : Pieces)
       for (int cnt = 0; cnt < pieceCount[pc]; ++cnt)
           si->materialKey ^= Zobrist::psq[pc][cnt];
-
-  si->endgameKey = si->materialKey;
-
-  // Ensure correctness of material imbalance calculation in case of
-  // one side having the bishop pair and the other side not.
-  // TODO Check again for correctness
-  if (bishop_pair(WHITE) != bishop_pair(BLACK))
-      si->materialKey ^= Zobrist::bishopPair;
 }
 
 
@@ -695,7 +685,6 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   Square to = to_sq(m);
   Piece pc = piece_on(from);
   Piece captured = type_of(m) == ENPASSANT ? make_piece(them, PAWN) : piece_on(to);
-  bool bishopPair = (bishop_pair(WHITE) == bishop_pair(BLACK));
 
   assert(color_of(pc) == us);
   assert(captured == NO_PIECE || color_of(captured) == (type_of(m) != CASTLING ? them : us));
@@ -745,12 +734,6 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       // Update material hash key and prefetch access to materialTable
       k ^= Zobrist::psq[captured][capsq];
       st->materialKey ^= Zobrist::psq[captured][pieceCount[captured]];
-      st->endgameKey = st->materialKey;
-
-      // Handle bishop pair
-      if (   type_of(captured) == BISHOP
-          && bishopPair != (bishop_pair(WHITE) == bishop_pair(BLACK)))
-          st->materialKey ^= Zobrist::bishopPair;
 
       prefetch(thisThread->materialTable[st->materialKey]);
 
@@ -806,12 +789,6 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           st->pawnKey ^= Zobrist::psq[pc][to];
           st->materialKey ^=  Zobrist::psq[promotion][pieceCount[promotion]-1]
                             ^ Zobrist::psq[pc][pieceCount[pc]];
-          st->endgameKey = st->materialKey;
-
-          // Handle bishop pair
-          if (   type_of(promotion) == BISHOP
-              && bishopPair != (bishop_pair(WHITE) == bishop_pair(BLACK)))
-              st->materialKey ^= Zobrist::bishopPair;
 
           prefetch(thisThread->materialTable[st->materialKey]);
 

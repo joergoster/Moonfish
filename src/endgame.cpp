@@ -95,9 +95,9 @@ namespace Endgames {
     add<KRKN>("KRKN");
     add<KQKP>("KQKP");
     add<KQKR>("KQKR");
-    add<KNNKP>("KNNKP");
 
     add<KNPK>("KNPK");
+    add<KNNKP>("KNNKP");
     add<KNPKB>("KNPKB");
     add<KRPKR>("KRPKR");
     add<KRPKB>("KRPKB");
@@ -309,21 +309,6 @@ Value Endgame<KQKR>::operator()(const Position& pos) const {
                 - RookValueEg
                 + PushToEdges[loserKSq]
                 + PushClose[distance(winnerKSq, loserKSq)];
-
-  return strongSide == pos.side_to_move() ? result : -result;
-}
-
-
-/// KNN vs KP. Simply push the opposing king to the corner
-template<>
-Value Endgame<KNNKP>::operator()(const Position& pos) const {
-
-  assert(verify_material(pos, strongSide, 2 * KnightValueMg, 0));
-  assert(verify_material(pos, weakSide, VALUE_ZERO, 1));
-
-  Value result =  2 * KnightValueEg
-                - PawnValueEg
-                + PushToEdges[pos.square<KING>(weakSide)];
 
   return strongSide == pos.side_to_move() ? result : -result;
 }
@@ -749,6 +734,23 @@ ScaleFactor Endgame<KBPKN>::operator()(const Position& pos) const {
       return SCALE_FACTOR_DRAW;
 
   return SCALE_FACTOR_NONE;
+}
+
+
+/// KNN vs KP. We return a very drawish scale factor, in general
+template<>
+ScaleFactor Endgame<KNNKP>::operator()(const Position& pos) const {
+
+  assert(verify_material(pos, strongSide, 2 * KnightValueMg, 0));
+  assert(verify_material(pos, weakSide, VALUE_ZERO, 1));
+
+  Square weakKingSq = pos.square<KING>(weakSide);
+  Square pawnSq = pos.square<PAWN>(weakSide);
+
+  int sf = (100 +  2 * PushToEdges[weakKingSq]
+                - 20 * relative_rank(weakSide, pawnSq)) / 10;
+
+  return ScaleFactor(sf);
 }
 
 

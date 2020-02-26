@@ -30,31 +30,6 @@
 
 TranspositionTable TT; // Our global transposition table
 
-/// TTEntry::save populates the TTEntry with a new node's data, possibly
-/// overwriting an old position. Update is not atomic and can be racy.
-
-void TTEntry::save(Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev) {
-
-  // Preserve any existing move for the same position
-  if (m || k != key)
-      move16 = uint16_t(m);
-
-  // Overwrite less valuable entries
-  if (   k != key
-      || d - DEPTH_OFFSET > depth8 - 4
-      || b == BOUND_EXACT)
-  {
-      assert(d >= DEPTH_OFFSET);
-
-      key       = k;
-      value16   = int16_t(v);
-      eval16    = int16_t(ev);
-      genBound8 = uint8_t(TT.generation8 | uint8_t(pv) << 2 | b);
-      depth8    = uint8_t(d - DEPTH_OFFSET);
-  }
-}
-
-
 /// TranspositionTable::resize() sets the size of the transposition table,
 /// measured in megabytes. Transposition table consists of a power of 2 number
 /// of clusters and each cluster consists of ClusterSize number of TTEntry.
@@ -144,13 +119,38 @@ TTEntry* TranspositionTable::probe(const Key key, bool& found) const {
 }
 
 
+/// TTEntry::save populates the TTEntry with a new node's data, possibly
+/// overwriting an old position. Update is not atomic and can be racy.
+
+void TTEntry::save(Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev) {
+
+  // Preserve any existing move for the same position
+  if (m || k != key)
+      move16 = uint16_t(m);
+
+  // Overwrite less valuable entries
+  if (   k != key
+      || d - DEPTH_OFFSET > depth8 - 4
+      || b == BOUND_EXACT)
+  {
+      assert(d >= DEPTH_OFFSET);
+
+      key       = k;
+      value16   = int16_t(v);
+      eval16    = int16_t(ev);
+      genBound8 = uint8_t(TT.generation8 | uint8_t(pv) << 2 | b);
+      depth8    = uint8_t(d - DEPTH_OFFSET);
+  }
+}
+
+
 /// TranspositionTable::hashfull() returns an approximation of the hashtable
 /// occupation during a search. The hash is x permill full, as per UCI protocol.
 
 int TranspositionTable::hashfull() const {
 
   int cnt = 0;
-  int samples = clusterCount > 64000000 ? 10000 : 1000;
+  int samples = clusterCount > 64000000 ? 10000 : 1000; // Take more samples when hash is very big
   int stride = clusterCount / samples;
 
   for (int i = 0; i < samples; ++i)

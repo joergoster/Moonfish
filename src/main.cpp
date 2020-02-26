@@ -31,6 +31,7 @@
 #include "syzygy/tbprobe.h"
 
 namespace PSQT {
+
   void init();
 }
 

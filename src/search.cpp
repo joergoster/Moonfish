@@ -93,20 +93,24 @@ namespace {
     std::atomic<Thread*> thread;
     std::atomic<Key> key;
   };
+
   std::array<Breadcrumb, 1024> breadcrumbs;
 
   // ThreadHolding structure keeps track of which thread left breadcrumbs at the given
   // node for potential reductions. A free node will be marked upon entering the moves
   // loop by the constructor, and unmarked upon leaving that loop by the destructor.
   struct ThreadHolding {
+
     explicit ThreadHolding(Thread* thisThread, Key posKey, int ply) {
        location = ply < 8 ? &breadcrumbs[posKey & (breadcrumbs.size() - 1)] : nullptr;
        otherThread = false;
        owning = false;
+
        if (location)
        {
           // See if another already marked this location, if not, mark it ourselves
           Thread* tmp = (*location).thread.load(std::memory_order_relaxed);
+
           if (tmp == nullptr)
           {
               (*location).thread.store(thisThread, std::memory_order_relaxed);
@@ -126,7 +130,7 @@ namespace {
 
     bool marked() { return otherThread; }
 
-    private:
+  private:
     Breadcrumb* location;
     bool otherThread, owning;
   };
@@ -169,6 +173,7 @@ namespace {
         if (Root)
             sync_cout << UCI::move(m, pos.is_chess960()) << ": " << cnt << sync_endl;
     }
+
     return nodes;
   }
 
@@ -206,6 +211,7 @@ void MainThread::search() {
   {
       nodes = perft<true>(rootPos, Limits.perft);
       sync_cout << "\nNodes searched: " << nodes << "\n" << sync_endl;
+
       return;
   }
 
@@ -242,9 +248,7 @@ void MainThread::search() {
   // the UCI protocol states that we shouldn't print the best move before the
   // GUI sends a "stop" or "ponderhit" command. We therefore simply wait here
   // until the GUI sends one of those commands.
-
-  while (!Threads.stop && (ponder || Limits.infinite))
-  {} // Busy wait for a stop or a ponder reset
+  while (!Threads.stop && (ponder || Limits.infinite)) {} // Busy wait for a stop or a ponder reset
 
   // Stop the threads if not already stopped (also raise the stop if
   // "ponderhit" just reset Threads.ponder).

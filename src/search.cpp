@@ -692,10 +692,22 @@ namespace {
      // and basically unused position key in case of an excluded move.
     excludedMove = ss->excludedMove;
     posKey = excludedMove ? 0 : pos.key();
-    tte = TT.probe(posKey, ttHit);
-    ttValue = ttHit ? value_from_tt(tte->value(), ss->ply) : VALUE_NONE;
-    ttMove =  rootNode ? thisThread->rootMoves[thisThread->pvIdx].pv[0]
-            : ttHit    ? tte->move() : MOVE_NONE;
+
+    // Don't probe at root
+    if (rootNode)
+    {
+        tte = nullptr;
+        ttHit = false;
+        ttValue = VALUE_NONE;
+        ttMove = thisThread->rootMoves[thisThread->pvIdx].pv[0];
+    }
+    else
+    {
+        tte = TT.probe(posKey, ttHit);
+        ttValue = ttHit ? value_from_tt(tte->value(), ss->ply) : VALUE_NONE;
+        ttMove  = ttHit ? tte->move() : MOVE_NONE;
+    }
+
     ttPv = PvNode || (ttHit && tte->is_pv());
 
     // thisThread->ttHitAverage can be used to approximate the running average of ttHit
@@ -816,7 +828,8 @@ namespace {
         else
             ss->staticEval = eval = -(ss-1)->staticEval + 2 * Eval::Tempo;
 
-        tte->save(posKey, VALUE_NONE, ttPv, BOUND_NONE, DEPTH_NONE, MOVE_NONE, eval);
+        if (!rootNode)
+            tte->save(posKey, VALUE_NONE, ttPv, BOUND_NONE, DEPTH_NONE, MOVE_NONE, eval);
     }
 
     // No early pruning during the first iterations
@@ -1361,7 +1374,7 @@ moves_loop: // When in check, search starts from here
     if (PvNode)
         bestValue = std::min(bestValue, maxValue);
 
-    if (!excludedMove)
+    if (!rootNode && !excludedMove)
         tte->save(posKey, value_to_tt(bestValue, ss->ply), ttPv,
                   bestValue >= beta     ? BOUND_LOWER :
                   bestValue <= oldAlpha ? BOUND_UPPER : BOUND_EXACT,

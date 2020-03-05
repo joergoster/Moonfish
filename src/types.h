@@ -171,6 +171,7 @@ enum Bound {
 enum Value : int {
   VALUE_ZERO      = 0,
   VALUE_DRAW      = 0,
+  VALUE_TEMPO     = 28,
   VALUE_KNOWN_WIN = 10000,
   VALUE_MATE      = 32000,
   VALUE_INFINITE  = 32001,
@@ -201,7 +202,12 @@ enum Piece {
   PIECE_NB = 16
 };
 
-extern Value PieceValue[PHASE_NB][PIECE_NB];
+constexpr Value PieceValue[PHASE_NB][PIECE_NB] = {
+  { VALUE_ZERO, PawnValueMg, KnightValueMg, BishopValueMg, RookValueMg, QueenValueMg, VALUE_ZERO, VALUE_ZERO,
+    VALUE_ZERO, PawnValueMg, KnightValueMg, BishopValueMg, RookValueMg, QueenValueMg, VALUE_ZERO, VALUE_ZERO },
+  { VALUE_ZERO, PawnValueEg, KnightValueEg, BishopValueEg, RookValueEg, QueenValueEg, VALUE_ZERO, VALUE_ZERO,
+    VALUE_ZERO, PawnValueEg, KnightValueEg, BishopValueEg, RookValueEg, QueenValueEg, VALUE_ZERO, VALUE_ZERO }
+};
 
 typedef int Depth;
 

@@ -22,11 +22,6 @@
 
 #include "types.h"
 
-Value PieceValue[PHASE_NB][PIECE_NB] = {
-  { VALUE_ZERO, PawnValueMg, KnightValueMg, BishopValueMg, RookValueMg, QueenValueMg },
-  { VALUE_ZERO, PawnValueEg, KnightValueEg, BishopValueEg, RookValueEg, QueenValueEg }
-};
-
 namespace PSQT {
 
 #define S(mg, eg) make_score(mg, eg)
@@ -90,7 +85,7 @@ constexpr Score Bonus[][RANK_NB][int(FILE_NB) / 2] = {
   }
 };
 
-constexpr Score PBonus[RANK_NB][FILE_NB] =
+constexpr Score PawnBonus[RANK_NB][FILE_NB] =
   { // Pawn (asymmetric distribution)
    { },
    { S(  3,-10), S(  3, -6), S( 10, 10), S( 19,  0), S( 16, 14), S( 19,  7), S(  7, -5), S( -5,-19) },
@@ -112,17 +107,13 @@ void init() {
 
   for (Piece pc = W_PAWN; pc <= W_KING; ++pc)
   {
-      PieceValue[MG][~pc] = PieceValue[MG][pc];
-      PieceValue[EG][~pc] = PieceValue[EG][pc];
-
       Score score = make_score(PieceValue[MG][pc], PieceValue[EG][pc]);
 
       for (Square s = SQ_A1; s <= SQ_H8; ++s)
       {
           File f = map_to_queenside(file_of(s));
-          psq[ pc][ s] = score + (type_of(pc) == PAWN ? PBonus[rank_of(s)][file_of(s)]
-                                                      : Bonus[pc][rank_of(s)][f]);
-          psq[~pc][~s] = psq[pc][s];
+          psq[~pc][~s] = psq[pc][s] = score + (type_of(pc) == PAWN ? PawnBonus[rank_of(s)][file_of(s)]
+                                                                   : Bonus[pc][rank_of(s)][f]);
       }
   }
 }

@@ -64,6 +64,15 @@ std::ostream& operator<<(std::ostream&, SyncCout);
 #define sync_endl std::endl << IO_UNLOCK
 
 
+namespace Utility {
+
+  /// Clamp a value between lo and hi (available in C++17)
+  template<class T> constexpr const T& clamp(const T& v, const T& lo, const T& hi) {
+    return v < lo ? lo : v > hi ? hi : v;
+  }
+}
+
+
 /// xorshift64star Pseudo-Random Number Generator
 /// This class is based on original code written and dedicated
 /// to the public domain by Sebastiano Vigna (2014).

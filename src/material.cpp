@@ -135,7 +135,7 @@ Entry* probe(const Position& pos) {
       e->gamePhase = PHASE_ENDGAME;
   else
   {
-      Value npm = clamp(npm_w + npm_b, EndgameLimit, MidgameLimit);
+      Value npm = Utility::clamp(npm_w + npm_b, EndgameLimit, MidgameLimit);
 
       // Map total non-pawn material into [PHASE_ENDGAME, PHASE_MIDGAME]
       e->gamePhase = Phase(((npm - EndgameLimit) * PHASE_MIDGAME) / (MidgameLimit - EndgameLimit));

@@ -251,7 +251,7 @@ inline Square Position::ep_square() const {
 }
 
 inline bool Position::is_on_semiopen_file(Color c, Square s) const {
-  return !(pieces(c, PAWN) & file_bb(s));
+  return !(byColorBB[c] & byTypeBB[PAWN] & file_bb(s));
 }
 
 inline bool Position::can_castle(CastlingRights cr) const {
@@ -311,7 +311,7 @@ inline bool Position::is_discovery_check_on_king(Color c, Move m) const {
 }
 
 inline bool Position::pawn_passed(Color c, Square s) const {
-  return !(pieces(~c, PAWN) & passed_pawn_span(c, s));
+  return !(byColorBB[~c] & byTypeBB[PAWN] & passed_pawn_span(c, s));
 }
 
 inline bool Position::advanced_pawn_push(Move m) const {
@@ -320,7 +320,7 @@ inline bool Position::advanced_pawn_push(Move m) const {
 }
 
 inline int Position::pawns_on_same_color_squares(Color c, Square s) const {
-  return popcount(pieces(c, PAWN) & ((DarkSquares & s) ? DarkSquares : LightSquares));
+  return popcount(byColorBB[c] & byTypeBB[PAWN] & ((DarkSquares & s) ? DarkSquares : LightSquares));
 }
 
 inline Key Position::key() const {
@@ -353,9 +353,10 @@ inline int Position::rule50_count() const {
 }
 
 inline bool Position::bishop_pair(Color c) const {
-  return   more_than_one(pieces(c, BISHOP))
-        && pieces(c, BISHOP) & LightSquares
-        && pieces(c, BISHOP) & DarkSquares;
+  Bitboard bishops = byColorBB[c] & byTypeBB[BISHOP];
+  return   more_than_one(bishops)
+        && bishops & LightSquares
+        && bishops & DarkSquares;
 }
 
 inline bool Position::opposite_bishops() const {

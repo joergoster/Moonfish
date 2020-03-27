@@ -328,12 +328,13 @@ void Thread::search() {
 
   MainThread* mainThread = (this == Threads.main() ? Threads.main() : nullptr);
   Color us = rootPos.side_to_move();
-  Depth adjustedDepth, lastBestMoveDepth = 0;
+  Depth adjustedDepth, pvDepth, lastBestMoveDepth = 0;
   Move lastBestMove = MOVE_NONE;
-  Value bestValue, alpha, beta, delta;
+  Value bestValue, alpha, beta, delta, bestScore, previousScore;
   bool reducedDepthSearch;
   double timeReduction = 1, totBestMoveChanges = 0;
-  int failedHighCnt, iterIdx = 0;
+  int failedHighCnt;
+  int iterRun = 0, iterIdx = 0;
 
   bestValue = alpha = -VALUE_INFINITE;
   delta = VALUE_ZERO;
@@ -347,7 +348,8 @@ void Thread::search() {
           mainThread->iterValue[i] = mainThread->previousScore;
   }
 
-  pvLines = std::min(size_t(Options["MultiPV"]), rootMoves.size());
+  size_t multiPV = std::min(size_t(Options["MultiPV"]), rootMoves.size());
+  pvLines = rootMoves.size();
   ttHitAverage = ttHitAverageWindow * ttHitAverageResolution / 2;
 
   int ct = Options["Contempt"] * PawnValueEg / 100; // From centipawns
@@ -364,9 +366,13 @@ void Thread::search() {
   contempt = (us == WHITE ?  make_score(ct, ct / 2)
                           : -make_score(ct, ct / 2));
 
+  // Each iteration will be searched this much times,
+  // simulating the search on a high-core machine.
+  int simulatedThreads = Options["Virtual Threads"];
+
   // Iterative deepening loop until requested to stop
   // or the maximum search depth is reached.
-  while (++rootDepth < MAX_PLY && !Threads.stop)
+  while (rootDepth < MAX_PLY && !Threads.stop)
   {
       // Age out PV variability metric
       if (mainThread)
@@ -380,6 +386,12 @@ void Thread::search() {
           rm.score = -VALUE_INFINITE;
       }
 
+      bestScore = rootMoves[0].previousScore;
+      ++iterRun;
+
+      if (mainThread && simulatedThreads > 2 && (rootDepth > 20 || Time.elapsed() > 30000))
+          sync_cout << "info string iteration loop " << iterRun << " of " << simulatedThreads << sync_endl;
+
       // MultiPV loop. We perform a full root search for each PV line
       for (pvIdx = 0; pvIdx < pvLines && !Threads.stop; ++pvIdx)
       {
@@ -390,11 +402,12 @@ void Thread::search() {
 
           // Reset UCI info selDepth for each depth and each PV line
           selDepth = 1;
+          pvDepth = rootDepth;
 
           // Reset aspiration window starting size
           if (rootDepth >= 4)
           {
-              Value previousScore = rootMoves[pvIdx].previousScore;
+              previousScore = rootMoves[pvIdx].previousScore;
               delta = Value(21 + abs(previousScore) / 256);
               alpha = std::max(previousScore - delta,-VALUE_INFINITE);
               beta  = std::min(previousScore + delta, VALUE_INFINITE);
@@ -404,11 +417,30 @@ void Thread::search() {
 
               contempt = (us == WHITE ?  make_score(dct, dct / 2)
                                       : -make_score(dct, dct / 2));
+
+              // Reduce the search depth for this PV line based on
+              // root move's previous score and number of PV line.
+              // TODO Also take into account: number of root moves, good or bad score,
+              // type of position, type of move (pawn move, checking move, capture/sacrifice, knight forks, etc.)
+              if (pvIdx)
+              {
+                  int diffScore = (bestScore - previousScore) / (PawnValueEg / 4);
+                  pvDepth = std::max(rootDepth - (3 * diffScore + 2 * msb(pvIdx + 1)) / 2, std::max(rootDepth / 2, 4));
+
+                  if (rootPos.gives_check(rootMoves[pvIdx].pv[0]))
+                      pvDepth += pvDepth + 6 < rootDepth ? 2 : 1;
+
+                  if (   rootPos.capture_or_promotion(rootMoves[pvIdx].pv[0])
+                      || type_of(rootPos.piece_on(from_sq(rootMoves[pvIdx].pv[0]))) == PAWN)
+                      pvDepth += rootPos.non_pawn_material() <= EndgameLimit ? 2 : 1;
+
+                  pvDepth = std::min(pvDepth, rootDepth);
+              }
           }
 
           // Reset counters/flags to control a reduced fail-high search
           failedHighCnt = 0;
-          adjustedDepth = rootDepth;
+          adjustedDepth = pvDepth;
           reducedDepthSearch = false;
 
           // Start with a small aspiration window and, in the case of a fail
@@ -418,10 +450,10 @@ void Thread::search() {
           {
               // Set reduced search depth after the second fail-high
               if (   failedHighCnt == 2
-                  && rootDepth > 6)
+                  && pvDepth > 6)
               {
                   failedHighCnt = 0;
-                  adjustedDepth = rootDepth - 2;
+                  adjustedDepth = pvDepth - 2;
                   reducedDepthSearch = true;
               }
 
@@ -434,19 +466,21 @@ void Thread::search() {
               // new PV that goes to the front. Note that in case of a MultiPV
               // search this may only be done on the last PV line, and that already
               // searched PV lines are preserved.
-              if (pvIdx + 1 == pvLines)
-                  std::stable_sort(rootMoves.begin() + pvIdx, rootMoves.end());
+//              if (pvIdx + 1 == pvLines)
+//                  std::stable_sort(rootMoves.begin() + pvIdx, rootMoves.end());
 
               // If search has been stopped, we break immediately
               if (Threads.stop)
                   break;
 
-              // When failing high/low give some update (without cluttering
-              // the UI) before a re-search.
-              if (   mainThread
-                  && pvLines == 1
+              // When failing high/low give some update before a re-search
+              // (without cluttering the UI).
+              if (    mainThread
+                  &&  multiPV == 1
+                  &&  pvIdx == 0
+                  && (iterRun == 1 || Time.elapsed() > 30000)
                   && (bestValue <= alpha || bestValue >= beta)
-                  && Time.elapsed() > 3000)
+                  &&  Time.elapsed() > 3000)
                   sync_cout << UCI::pv(rootPos, rootDepth, alpha, beta) << sync_endl;
 
               // In case of failing low/high increase aspiration window and
@@ -491,18 +525,30 @@ void Thread::search() {
               && int(rootMoves[0].pv.size()) == 2 * Limits.mate - 1)
               Threads.stop = true;
 
-          // Let the main thread update the GUI
+          // Let the main thread update the GUI:
+          // when the search has been stopped,
+          // when a new best move has been found,
+          // or when a PV line has been finished
+          // (only after some time to not flood the GUI).
           if (    mainThread
-              && (Threads.stop || pvIdx + 1 == pvLines || Time.elapsed() > 3000))
+              && (   Threads.stop
+                  || (pvIdx + 1 == multiPV || (Time.elapsed() > 30000 && pvIdx + 1 < multiPV))
+                  || rootMoves[0].pv[0] != lastBestMove))
               sync_cout << UCI::pv(rootPos, rootDepth, alpha, beta) << sync_endl;
+
+          if (rootMoves[0].pv[0] != lastBestMove)
+          {
+             lastBestMove = rootMoves[0].pv[0];
+             lastBestMoveDepth = rootDepth;
+          }
       }
 
-      if (!Threads.stop)
+      // Finished this iteration?
+      if (!Threads.stop && iterRun == simulatedThreads)
+      {
           completedDepth = rootDepth;
-
-      if (rootMoves[0].pv[0] != lastBestMove) {
-         lastBestMove = rootMoves[0].pv[0];
-         lastBestMoveDepth = rootDepth;
+          rootDepth++;
+          iterRun = 0;
       }
 
       // Helper threads may continue with the next iteration
@@ -510,6 +556,7 @@ void Thread::search() {
           continue;
 
       // Have we reached the specified search depth?
+      // Main thread only!
       if (Limits.depth && completedDepth >= Limits.depth)
           Threads.stop = true;
 
@@ -629,35 +676,21 @@ namespace {
         if (Threads.stop.load(std::memory_order_relaxed))
             return VALUE_ZERO;
 
-        // Step 3b. Check for insufficient material
-        if (!pos.count<PAWN>())
-        {
-            // One side with a minor or lone kings
-            if (pos.non_pawn_material() <= BishopValueMg)
-                return VALUE_DRAW;
-
-            // Each side has a bishop of the same color
-            if (    pos.non_pawn_material(WHITE) == BishopValueMg
-                &&  pos.non_pawn_material(BLACK) == BishopValueMg
-                && !pos.opposite_bishops())
-                return VALUE_DRAW;
-        }
-
-        // Step 3c. Check for draw by 50-move rule
+        // Step 3b. Check for draw by 50-move rule
         if (    TB::UseRule50
             &&  pos.rule50_count() == 100
             && (!inCheck || MoveList<LEGAL>(pos).size()))
             return VALUE_DRAW;
 
-        // Step 3d. Check for draw by repetition
+        // Step 3c. Check for draw by repetition
         if (pos.is_draw(ss->ply))
             return VALUE_DRAW;
 
-        // Step 3e. Check for maximum ply reached
+        // Step 3d. Check for maximum ply reached
         if (ss->ply >= MAX_PLY)
             return !inCheck ? evaluate(pos) : beta;
 
-        // Step 3f. Mate distance pruning. Even if we mate at the next move our score
+        // Step 3e. Mate distance pruning. Even if we mate at the next move our score
         // would be at best mate_in(ss->ply+1), but if alpha is already bigger because
         // a shorter mate was found upward in the tree then there is no need to search
         // because we will never beat the current alpha. Same logic but with reversed
@@ -743,8 +776,11 @@ namespace {
             }
         }
 
-        if (pos.rule50_count() < 90)
-            return ttValue;
+        // Scale down ttValue as we approach the 50-move rule
+        if (TB::UseRule50 && pos.rule50_count() > 68)
+            ttValue = ttValue * (100 - pos.rule50_count()) / 32;
+
+        return ttValue;
     }
 
     // Step 5. Tablebases probe
@@ -805,6 +841,8 @@ namespace {
         improving = false;
         goto moves_loop;  // Skip early pruning when in check
     }
+    else if (TB::RootInTB && thisThread->rootMoves[thisThread->pvIdx].tbRank == 0)
+        ss->staticEval = eval = VALUE_DRAW;
     else if (ttHit)
     {
         // Never assume anything about values stored in TT
@@ -832,8 +870,12 @@ namespace {
             tte->save(posKey, VALUE_NONE, ttPv, BOUND_NONE, DEPTH_NONE, MOVE_NONE, eval);
     }
 
+    // Also scale down static eval as we approach the 50-move rule
+    if (TB::UseRule50 && pos.rule50_count() > 68)
+        ss->staticEval = eval = eval * (100 - pos.rule50_count()) / 32;
+
     // No early pruning during the first iterations
-    if (thisThread->rootDepth <= 6)
+    if (thisThread->rootDepth <= 6) // TODO: use adjustedDepth here?
     {
         improving = false;
         goto moves_loop;
@@ -865,7 +907,7 @@ namespace {
         &&  eval >= ss->staticEval
         &&  ss->staticEval >= beta - 32 * depth + 292 - improving * 30
         &&  pos.non_pawn_material(us)
-        &&  thisThread->selDepth + 5 > thisThread->rootDepth
+        &&  thisThread->selDepth + 5 > thisThread->rootDepth // TODO use adjustedDepth here?
         && !(depth > 12 && MoveList<LEGAL>(pos).size() < 4))
     {
         assert(eval - beta >= 0);
@@ -1019,7 +1061,7 @@ moves_loop: // When in check, search starts from here
 
       // Step 13. Pruning at shallow depth (~170 Elo)
       if (  !PvNode
-          && thisThread->rootDepth > 6
+          && thisThread->rootDepth > 6 // TODO use adjustedDepth here?
           && pos.non_pawn_material(us)
           && bestValue > VALUE_MATED_IN_MAX_PLY)
       {
@@ -1042,10 +1084,9 @@ moves_loop: // When in check, search starts from here
               if (   lmrDepth < 6
                   && !inCheck
                   && ss->staticEval + 235 + 172 * lmrDepth <= alpha
-                  &&  thisThread->mainHistory[us][from_to(move)]
-                    + (*contHist[0])[movedPiece][to_sq(move)]
+                  &&  (*contHist[0])[movedPiece][to_sq(move)]
                     + (*contHist[1])[movedPiece][to_sq(move)]
-                    + (*contHist[3])[movedPiece][to_sq(move)] < 25000)
+                    + (*contHist[3])[movedPiece][to_sq(move)] < 27400)
                   continue;
 
               // Prune moves with negative SEE (~10 Elo)
@@ -1079,9 +1120,10 @@ moves_loop: // When in check, search starts from here
           &&  pos.legal(move))
       {
           Value singularBeta = ttValue - (((ttPv && !PvNode) + 4) * depth) / 2;
+          Depth singularDepth = (depth - 1 + 3 * (ttPv && !PvNode)) / 2;
 
           ss->excludedMove = move;
-          value = search<NonPV>(pos, ss, singularBeta-1, singularBeta, depth/2, cutNode);
+          value = search<NonPV>(pos, ss, singularBeta-1, singularBeta, singularDepth, cutNode);
           ss->excludedMove = MOVE_NONE;
 
           if (value < singularBeta)
@@ -1170,7 +1212,7 @@ moves_loop: // When in check, search starts from here
 
           // Decrease reduction if ttMove has been singularly extended
           if (singularLMR)
-              r -= 2;
+              r -= 1 + (ttPv && !PvNode);
 
           if (!captureOrPromotion)
           {
@@ -1199,13 +1241,6 @@ moves_loop: // When in check, search starts from here
                              + (*contHist[3])[movedPiece][to_sq(move)]
                              - 4926;
 
-              // Reset statScore to zero if negative and most stats shows >= 0
-              if (    ss->statScore < 0
-                  && (*contHist[0])[movedPiece][to_sq(move)] >= 0
-                  && (*contHist[1])[movedPiece][to_sq(move)] >= 0
-                  && thisThread->mainHistory[us][from_to(move)] >= 0)
-                  ss->statScore = 0;
-
               // Decrease/increase reduction by comparing opponent's stat score (~10 Elo)
               if (ss->statScore >= -102 && (ss-1)->statScore < -114)
                   r--;
@@ -1214,7 +1249,7 @@ moves_loop: // When in check, search starts from here
                   r++;
 
               // Decrease/increase reduction for moves with a good/bad history (~30 Elo)
-              r -= ss->statScore / 16384;
+              r -= ss->statScore / 16434;
           }
 
           // Increase reduction for captures/promotions if late move and at low depth
@@ -1225,10 +1260,14 @@ moves_loop: // When in check, search starts from here
 
           value = -search<NonPV>(pos, ss+1, -(alpha+1), -alpha, d, true);
 
-          doFullDepthSearch = (value > alpha && d != newDepth), didLMR = true;
+          doFullDepthSearch = value > alpha && d != newDepth;
+          didLMR = true;
       }
       else
-          doFullDepthSearch = !PvNode || moveCount > 1, didLMR = false;
+      {
+          doFullDepthSearch = !PvNode || moveCount > 1;
+          didLMR = false;
+      }
 
       // Step 17. Full depth search when LMR is skipped or fails high
       if (doFullDepthSearch)
@@ -1417,20 +1456,6 @@ moves_loop: // When in check, search starts from here
     {
         ss->pv.clear();
         thisThread->selDepth = std::max(ss->ply, thisThread->selDepth);
-    }
-
-    // Check for insufficient material
-    if (!pos.count<PAWN>())
-    {
-        // One side with a minor or lone kings
-        if (pos.non_pawn_material() <= BishopValueMg)
-            return VALUE_DRAW;
-
-        // Each side has a bishop of the same color
-        if (    pos.non_pawn_material(WHITE) == BishopValueMg
-            &&  pos.non_pawn_material(BLACK) == BishopValueMg
-            && !pos.opposite_bishops())
-            return VALUE_DRAW;
     }
 
     // Check for draw by 50-move rule

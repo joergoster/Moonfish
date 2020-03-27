@@ -63,6 +63,7 @@ void init(OptionsMap& o) {
   o["Analysis Contempt"]     << Option("Both var Off var White var Black var Both", "Both");
   o["Contempt"]              << Option(12, -100, 100);
   o["Threads"]               << Option(1, 1, 512, on_threads);
+  o["Virtual Threads"]       << Option(1, 1, 64);
   o["Hash"]                  << Option(16, 1, MaxHashMB, on_hash_size);
   o["Clear Hash"]            << Option(on_clear_hash);
   o["MultiPV"]               << Option(1, 1, 500);

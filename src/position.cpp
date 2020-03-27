@@ -933,6 +933,8 @@ void Position::do_null_move(StateInfo& newSt) {
   assert(!checkers());
   assert(&newSt != st);
 
+  thisThread->nodes.fetch_add(1, std::memory_order_relaxed);
+
   std::memcpy(&newSt, st, sizeof(StateInfo));
   newSt.previous = st;
   st = &newSt;
@@ -1112,17 +1114,14 @@ bool Position::see_ge(Move m, Value threshold) const {
 }
 
 
-/// Position::is_draw() tests whether the position is drawn by 50-move rule
-/// or by repetition. It does not detect stalemates.
+/// Position::is_draw() tests whether the position is drawn by repetition.
+/// It does not detect stalemates.
 
 bool Position::is_draw(int ply) const {
 
   // Return a draw score if a position repeats once earlier but strictly
   // after the root, or repeats twice before or at the root.
-  if (st->repetition && st->repetition < ply)
-      return true;
-
-  return false;
+  return st->repetition && st->repetition < ply;
 }
 
 

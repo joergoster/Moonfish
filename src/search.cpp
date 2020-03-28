@@ -390,7 +390,7 @@ void Thread::search() {
       ++iterRun;
 
       if (mainThread && simulatedThreads > 2 && (rootDepth > 20 || Time.elapsed() > 30000))
-          sync_cout << "info string iteration loop " << iterRun << " of " << simulatedThreads << sync_endl;
+          sync_cout << "info string loop " << iterRun << " of " << simulatedThreads << sync_endl;
 
       // MultiPV loop. We perform a full root search for each PV line
       for (pvIdx = 0; pvIdx < pvLines && !Threads.stop; ++pvIdx)

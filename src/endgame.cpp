@@ -92,7 +92,7 @@ namespace Endgames {
     add<KRKB>("KRKB");
     add<KRKN>("KRKN");
     add<KQKP>("KQKP");
-//    add<KQKR>("KQKR");
+    add<KQKR>("KQKR");
 
     add<KNPK>("KNPK");
     add<KNNKP>("KNNKP");
@@ -292,8 +292,8 @@ Value Endgame<KQKP>::operator()(const Position& pos) const {
   return strongSide == pos.side_to_move() ? result : -result;
 }
 
-/*
-/// KQ vs KR.  This is almost identical to KX vs K:  We give the attacking
+
+/// KQ vs KR. This is almost identical to KX vs K: we give the attacking
 /// king a bonus for having the kings close together, and for forcing the
 /// defending king towards the edge. If we also take care to avoid null move for
 /// the defending side in the search, this is usually sufficient to win KQ vs KR.
@@ -304,22 +304,16 @@ Value Endgame<KQKR>::operator()(const Position& pos) const {
   assert(verify_material(pos, weakSide, RookValueMg, 0));
 
   Square winnerKSq = pos.square<KING>(strongSide);
-  Square queenSq = pos.square<QUEEN>(strongSide);
   Square loserKSq = pos.square<KING>(weakSide);
-  Square rookSq = pos.square<ROOK>(weakSide);
 
   Value result =  QueenValueEg
                 - RookValueEg
-                +  10 * PushToEdges[loserKSq]
-                +  10 * PushClose[distance(winnerKSq, loserKSq)]
-//                +  10 * PushAway[distance(rookSq, loserKSq)]
-                + 500 * (   pos.attacks_from<BISHOP>(queenSq) & rookSq
-                         && pos.attacks_from<QUEEN>(queenSq) & loserKSq
-                         && !(pos.attacks_from<KING>(loserKSq) & rookSq));
+                + PushToEdges[loserKSq]
+                + PushClose[distance(winnerKSq, loserKSq)];
 
   return strongSide == pos.side_to_move() ? result : -result;
 }
-*/
+
 
 /// KB and one or more pawns vs K. It checks for draws with rook pawns and
 /// a bishop of the wrong color. If such a draw is detected, SCALE_FACTOR_DRAW

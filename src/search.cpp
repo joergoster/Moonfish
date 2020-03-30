@@ -657,13 +657,10 @@ namespace {
     bestValue = -VALUE_INFINITE;
     maxValue = VALUE_INFINITE;
     oldAlpha = alpha;
+    ss->pv.clear(); // Refresh pv
 
-    // Refresh pv and update selDepth
     if (PvNode)
-    {
-        ss->pv.clear();
         thisThread->selDepth = std::max(ss->ply, thisThread->selDepth);
-    }
 
     // Step 2. Check for the available remaining time
     if (thisThread == Threads.main())
@@ -1342,6 +1339,8 @@ moves_loop: // When in check, search starts from here
 
               if (PvNode && !rootNode) // Update pv even in fail-high case
               {
+                  assert(MoveList<LEGAL>(pos).contains(move));
+
                   // Reset and insert current best move
                   ss->pv.clear();
                   ss->pv.push_back(move);
@@ -1388,8 +1387,12 @@ moves_loop: // When in check, search starts from here
     assert(moveCount || !inCheck || excludedMove || !MoveList<LEGAL>(pos).size());
 
     if (!moveCount)
+    {
+        assert(!ss->pv.size());
+
         bestValue = excludedMove ? alpha
                    :     inCheck ? mated_in(ss->ply) : VALUE_DRAW;
+    }
     else if (bestMove)
     {
         // Quiet best move: update move sorting heuristics
@@ -1451,12 +1454,10 @@ moves_loop: // When in check, search starts from here
     inCheck = pos.checkers();
     moveCount = 0;
     oldAlpha = alpha; // To flag BOUND_EXACT when eval above alpha
+    ss->pv.clear();
 
     if (PvNode)
-    {
-        ss->pv.clear();
         thisThread->selDepth = std::max(ss->ply, thisThread->selDepth);
-    }
 
     // Check for draw by 50-move rule
     if (    TB::UseRule50
@@ -1624,6 +1625,8 @@ moves_loop: // When in check, search starts from here
 
               if (PvNode) // Update pv even in fail-high case
               {
+                  assert(MoveList<LEGAL>(pos).contains(move));
+
                   ss->pv.clear();
                   ss->pv.push_back(move);
 
@@ -1642,7 +1645,12 @@ moves_loop: // When in check, search starts from here
     // All legal moves have been searched. A special case: If we're in check
     // and no legal moves were found, it is checkmate.
     if (inCheck && bestValue == -VALUE_INFINITE)
+    {
+        assert(!MoveList<LEGAL>(pos).size());
+        assert(!ss->pv.size());
+
         return mated_in(ss->ply); // Plies to mate from the root
+    }
 
     tte->save(posKey, value_to_tt(bestValue, ss->ply), pvHit,
               bestValue >= beta     ? BOUND_LOWER :

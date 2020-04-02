@@ -425,7 +425,7 @@ void Thread::search() {
               if (pvIdx)
               {
                   int diffScore = (bestScore - previousScore) / (PawnValueEg / 4);
-                  pvDepth = std::max(rootDepth - (3 * diffScore + 2 * msb(pvIdx + 1)) / 2, std::max(rootDepth / 2, 4));
+                  pvDepth = std::max(rootDepth - (msb(diffScore + 1) + 2 * msb(pvIdx + 1)), std::max(rootDepth / 2, 4));
 
                   if (rootPos.gives_check(rootMoves[pvIdx].pv[0]))
                       pvDepth += pvDepth + 6 < rootDepth ? 2 : 1;
@@ -533,9 +533,10 @@ void Thread::search() {
           if (    mainThread
               && (   Threads.stop
                   || (pvIdx + 1 == multiPV || (Time.elapsed() > 30000 && pvIdx + 1 < multiPV))
-                  || rootMoves[0].pv[0] != lastBestMove))
+                  || (rootMoves[0].pv[0] != lastBestMove && rootDepth > 12)))
               sync_cout << UCI::pv(rootPos, rootDepth, alpha, beta) << sync_endl;
 
+          // Do we have a new best move?
           if (rootMoves[0].pv[0] != lastBestMove)
           {
              lastBestMove = rootMoves[0].pv[0];
@@ -608,11 +609,9 @@ void Thread::search() {
       iterIdx = (iterIdx + 1) & 3;
   }
 
-  // Let the helper threads return
-  if (!mainThread)
-      return;
+  if (mainThread)
+      mainThread->previousTimeReduction = timeReduction;
 
-  mainThread->previousTimeReduction = timeReduction;
   return;
 }
 

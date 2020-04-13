@@ -528,11 +528,12 @@ void Thread::search() {
           // Let the main thread update the GUI:
           // when the search has been stopped,
           // when a new best move has been found,
+          // when the current iteration has been finished,
           // or when a PV line has been finished
           // (only after some time to not flood the GUI).
           if (    mainThread
               && (   Threads.stop
-                  || (pvIdx + 1 == multiPV || (Time.elapsed() > 30000 && pvIdx + 1 < multiPV))
+                  || (pvIdx + 1 == pvLines || (Time.elapsed() > 30000 && pvIdx + 1 < multiPV))
                   || (rootMoves[0].pv[0] != lastBestMove && rootDepth > 12)))
               sync_cout << UCI::pv(rootPos, rootDepth, alpha, beta) << sync_endl;
 
